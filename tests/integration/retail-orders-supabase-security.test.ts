@@ -39,6 +39,7 @@ describe("Fase 6C.1 — Homologação PostgreSQL/Supabase: RLS, RPC Spoofing, Is
   let managerA: { id: string; client: AppClient };
   let staffA: { id: string; client: AppClient };
   let ownerB: { id: string; client: AppClient };
+  let platformAdmin: { id: string; client: AppClient };
 
   const cleanupUserIds: string[] = [];
   const cleanupTenantIds: string[] = [];
@@ -82,12 +83,15 @@ describe("Fase 6C.1 — Homologação PostgreSQL/Supabase: RLS, RPC Spoofing, Is
     tenantSuspId = tSusp!.id;
     cleanupTenantIds.push(tenantAId, tenantBId, tenantSuspId);
 
-    [ownerA, managerA, staffA, ownerB] = await Promise.all([
+    [ownerA, managerA, staffA, ownerB, platformAdmin] = await Promise.all([
       createAndSignIn(`owner.a.${RUN_ID}@test.local`, "Owner A"),
       createAndSignIn(`manager.a.${RUN_ID}@test.local`, "Manager A"),
       createAndSignIn(`staff.a.${RUN_ID}@test.local`, "Staff A"),
       createAndSignIn(`owner.b.${RUN_ID}@test.local`, "Owner B"),
+      createAndSignIn(`padmin.${RUN_ID}@test.local`, "Platform Admin"),
     ]);
+
+    await adminClient.from("platform_admins").insert({ user_id: platformAdmin.id });
 
     await adminClient.from("tenant_memberships").insert([
       { tenant_id: tenantAId, user_id: ownerA.id, role: "owner" },
@@ -157,16 +161,20 @@ describe("Fase 6C.1 — Homologação PostgreSQL/Supabase: RLS, RPC Spoofing, Is
     ]);
     singleStockVariantId = v1!.id;
     multiStockVariantId = v2!.id;
-  });
+  }, 45_000);
 
   afterAll(async () => {
+    await adminClient.from("tenants").update({ status: "active" }).eq("id", tenantSuspId);
+
+    // Garante limpeza também na tabela platform_admins antes de remover auth users
+    await adminClient.from("platform_admins").delete().eq("user_id", platformAdmin.id);
     for (const tId of cleanupTenantIds) {
       await adminClient.from("tenants").delete().eq("id", tId);
     }
     for (const uId of cleanupUserIds) {
       await adminClient.auth.admin.deleteUser(uId);
     }
-  });
+  }, 45_000);
 
   async function seedCartAndCreateOrder(variantId: string, qty: number, customerName: string) {
     const rawCartToken = generateOpaqueToken(24);
@@ -370,4 +378,67 @@ describe("Fase 6C.1 — Homologação PostgreSQL/Supabase: RLS, RPC Spoofing, Is
     expect(error).not.toBeNull();
     expect(error!.message).toMatch(/STORE_UNAVAILABLE/i);
   });
+
+  it("6. Valida transition_retail_order_status, Platform Admin e bloqueio em tenant suspenso", async () => {
+    const order = await seedCartAndCreateOrder(multiStockVariantId, 1, "Ciclo Completo");
+
+    // Staff não pode transicionar nem passando NULL nem spoofing platformAdmin.id
+    const { error: staffTransErr } = await staffA.client.rpc("transition_retail_order_status", {
+      p_tenant_id: tenantAId,
+      p_order_id: order.id,
+      p_next_status: "confirmed",
+      p_actor_user_id: platformAdmin.id,
+    });
+    expect(staffTransErr).not.toBeNull();
+    expect(staffTransErr!.message).toMatch(/FORBIDDEN/i);
+
+    // Platform Admin consegue confirmar e avançar fluxo operacional com seu próprio auth.uid()
+    const { data: confirmed, error: pConfirmErr } = await platformAdmin.client.rpc("transition_retail_order_status", {
+      p_tenant_id: tenantAId,
+      p_order_id: order.id,
+      p_next_status: "confirmed",
+      p_actor_user_id: platformAdmin.id,
+      p_actor_name: "Platform Admin",
+    });
+    expect(pConfirmErr).toBeNull();
+    expect(confirmed?.status).toBe("confirmed");
+
+    for (const nextStatus of ["preparing", "ready", "completed"] as const) {
+      const { data: stepData, error: stepErr } = await managerA.client.rpc("transition_retail_order_status", {
+        p_tenant_id: tenantAId,
+        p_order_id: order.id,
+        p_next_status: nextStatus,
+        p_actor_user_id: managerA.id,
+        p_actor_name: "Manager A",
+      });
+      expect(stepErr).toBeNull();
+      expect(stepData?.status).toBe(nextStatus);
+    }
+
+    // Pedido concluído não pode ser cancelado nem revertido
+    const { error: cancelCompletedErr } = await ownerA.client.rpc("cancel_retail_order", {
+      p_tenant_id: tenantAId,
+      p_order_id: order.id,
+      p_actor_user_id: ownerA.id,
+    });
+    expect(cancelCompletedErr).not.toBeNull();
+    expect(cancelCompletedErr!.message).toMatch(/INVALID_TRANSITION/i);
+
+    // Operações de RPC em tenant suspenso bloqueiam até Owner e Platform Admin
+    const { error: suspConfirmErr } = await ownerA.client.rpc("confirm_retail_order", {
+      p_tenant_id: tenantSuspId,
+      p_order_id: "00000000-0000-0000-0000-000000000099",
+      p_actor_user_id: ownerA.id,
+    });
+    expect(suspConfirmErr).not.toBeNull();
+    expect(suspConfirmErr!.message).toMatch(/TENANT_SUSPENDED/i);
+
+    const { error: suspAdminErr } = await platformAdmin.client.rpc("cancel_retail_order", {
+      p_tenant_id: tenantSuspId,
+      p_order_id: "00000000-0000-0000-0000-000000000099",
+      p_actor_user_id: platformAdmin.id,
+    });
+    expect(suspAdminErr).not.toBeNull();
+    expect(suspAdminErr!.message).toMatch(/TENANT_SUSPENDED/i);
+  }, 30_000);
 });

@@ -11,10 +11,13 @@ function loadEnvFile(filePath: string) {
     if (eqIdx !== -1) {
       const key = trimmed.slice(0, eqIdx).trim();
       const val = trimmed.slice(eqIdx + 1).trim();
-      process.env[key] = val;
+      if (process.env[key] === undefined) {
+        process.env[key] = val;
+      }
     }
   }
 }
 
-loadEnvFile(path.resolve(process.cwd(), ".env.local"));
+const targetEnvFile = process.env.DEVESSENT_ENV_FILE || ".env.local";
+loadEnvFile(path.resolve(process.cwd(), targetEnvFile));
 

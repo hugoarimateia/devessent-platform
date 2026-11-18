@@ -17,6 +17,18 @@ function hasValidXamppCookieShape(request: NextRequest): boolean {
   }
 }
 
+function buildPostAuthRedirectUrl(request: NextRequest): URL {
+  const safeTarget = sanitizeRedirectUrl(
+    request.nextUrl.searchParams.get("redirect"),
+    "/dashboard"
+  );
+  const parsedTarget = new URL(safeTarget, "http://localhost");
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = parsedTarget.pathname;
+  redirectUrl.search = parsedTarget.search;
+  return redirectUrl;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
@@ -33,10 +45,7 @@ export async function middleware(request: NextRequest) {
     const hasXamppSession = hasValidXamppCookieShape(request);
 
     if (hasXamppSession && isAuthRoute) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
-      redirectUrl.search = "";
-      return NextResponse.redirect(redirectUrl);
+      return NextResponse.redirect(buildPostAuthRedirectUrl(request));
     }
 
     if (!hasXamppSession && isProtectedRoute) {
@@ -54,10 +63,7 @@ export async function middleware(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
 
   if (user && isAuthRoute) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
-    redirectUrl.search = "";
-    return NextResponse.redirect(redirectUrl);
+    return NextResponse.redirect(buildPostAuthRedirectUrl(request));
   }
 
   if (!user && isProtectedRoute) {
