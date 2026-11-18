@@ -1,0 +1,706 @@
+{
+  "phase": "before",
+  "timestamp": "2026-11-14T20:06:53.906Z",
+  "baseUrl": "http://localhost:3000",
+  "supabaseQueries": {
+    "signInWithPassword": {
+      "singleMs": 111.49
+    },
+    "auth.getUser": {
+      "samplesMs": [
+        30.13,
+        41.82,
+        41.71,
+        38.14,
+        10.23
+      ],
+      "minMs": 10.23,
+      "maxMs": 41.82,
+      "meanMs": 32.41,
+      "medianMs": 38.14,
+      "p95Ms": 41.82
+    },
+    "profiles.select": {
+      "samplesMs": [
+        30.09,
+        26.38,
+        20.7,
+        11.46,
+        14.63
+      ],
+      "minMs": 11.46,
+      "maxMs": 30.09,
+      "meanMs": 20.65,
+      "medianMs": 20.7,
+      "p95Ms": 30.09
+    },
+    "platform_admins.select": {
+      "samplesMs": [
+        15.97,
+        15.21,
+        16.36,
+        18.33,
+        14.47
+      ],
+      "minMs": 14.47,
+      "maxMs": 18.33,
+      "meanMs": 16.07,
+      "medianMs": 15.97,
+      "p95Ms": 18.33
+    },
+    "tenant_memberships.listUserTenants": {
+      "samplesMs": [
+        21.61,
+        12.78,
+        18.89,
+        19.49,
+        25.18
+      ],
+      "minMs": 12.78,
+      "maxMs": 25.18,
+      "meanMs": 19.59,
+      "medianMs": 19.49,
+      "p95Ms": 25.18
+    },
+    "resolveTenantContext": {
+      "samplesMs": [
+        28.85,
+        31.38,
+        24.54,
+        24.4,
+        33.65
+      ],
+      "minMs": 24.4,
+      "maxMs": 33.65,
+      "meanMs": 28.56,
+      "medianMs": 28.85,
+      "p95Ms": 33.65
+    },
+    "tenant_settings.select": {
+      "samplesMs": [
+        16.99,
+        15.6,
+        14.92,
+        8,
+        5.56
+      ],
+      "minMs": 5.56,
+      "maxMs": 16.99,
+      "meanMs": 12.21,
+      "medianMs": 14.92,
+      "p95Ms": 16.99
+    },
+    "tenant_invitations.select": {
+      "samplesMs": [
+        18.25,
+        10.87,
+        21.92,
+        14.71,
+        12.53
+      ],
+      "minMs": 10.87,
+      "maxMs": 21.92,
+      "meanMs": 15.65,
+      "medianMs": 14.71,
+      "p95Ms": 21.92
+    },
+    "audit_logs.tenant_page": {
+      "samplesMs": [
+        495.64,
+        206.55,
+        89.98,
+        193.77,
+        59.76
+      ],
+      "minMs": 59.76,
+      "maxMs": 495.64,
+      "meanMs": 209.14,
+      "medianMs": 193.77,
+      "p95Ms": 495.64
+    },
+    "tenants.listAll_admin": {
+      "samplesMs": [
+        44.97,
+        32.78,
+        99.93,
+        98.27,
+        59
+      ],
+      "minMs": 32.78,
+      "maxMs": 99.93,
+      "meanMs": 66.99,
+      "medianMs": 59,
+      "p95Ms": 99.93
+    }
+  },
+  "httpLogin": {
+    "first": {
+      "status": 200,
+      "ttfbMs": 523.97,
+      "totalMs": 566.17
+    },
+    "warmTtfb": {
+      "samplesMs": [
+        362.63,
+        2177.24,
+        348.11,
+        296.47,
+        299.65
+      ],
+      "minMs": 296.47,
+      "maxMs": 2177.24,
+      "meanMs": 696.82,
+      "medianMs": 348.11,
+      "p95Ms": 2177.24
+    },
+    "warmTotal": {
+      "samplesMs": [
+        398.89,
+        2219.39,
+        368.52,
+        328.5,
+        319.05
+      ],
+      "minMs": 319.05,
+      "maxMs": 2219.39,
+      "meanMs": 726.87,
+      "medianMs": 368.52,
+      "p95Ms": 2219.39
+    },
+    "prolonged": {
+      "samplesMs": [
+        247.59,
+        394.97,
+        293.99,
+        421.11,
+        289.67,
+        636.38,
+        381.2,
+        1717.25,
+        467.51,
+        436.27,
+        477.99,
+        502.7,
+        506.53,
+        683.22,
+        491.88,
+        533.53,
+        474,
+        537.32,
+        439.36,
+        419.53
+      ],
+      "minMs": 247.59,
+      "maxMs": 1717.25,
+      "meanMs": 517.6,
+      "medianMs": 470.76,
+      "p95Ms": 683.22,
+      "totalRequests": 20,
+      "successCount": 20,
+      "failureCount": 0,
+      "failureRatePct": 0
+    }
+  },
+  "prolongedDashboard": {
+    "samplesMs": [
+      1041.63,
+      937.91,
+      1008.41,
+      1005.22,
+      974.06,
+      982.32,
+      1197.52,
+      951.58,
+      1110.16,
+      941.09,
+      990.79,
+      998.18,
+      1645.22,
+      957.08,
+      972.21,
+      949.4,
+      1132.86,
+      967.51,
+      939.59,
+      974.97
+    ],
+    "minMs": 937.91,
+    "maxMs": 1645.22,
+    "meanMs": 1033.88,
+    "medianMs": 978.65,
+    "p95Ms": 1197.52,
+    "totalRequests": 20,
+    "successCount": 20,
+    "failureCount": 0,
+    "failureRatePct": 0
+  },
+  "routes": [
+    {
+      "route": "/login",
+      "role": "Anônimo",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/login",
+        "usableHeadingMs": 1096.7,
+        "networkIdleMs": 2032.33,
+        "ttfbMs": 372,
+        "domInteractiveMs": 930.8,
+        "loadEventMs": 2981,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 695742,
+          "totalTransferBytes": 787427,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 17768
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            515.93,
+            714.8,
+            1791.44,
+            688.27,
+            522.46
+          ],
+          "minMs": 515.93,
+          "maxMs": 1791.44,
+          "meanMs": 846.58,
+          "medianMs": 688.27,
+          "p95Ms": 1791.44
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            396.3,
+            256.7,
+            1630.1,
+            448.1,
+            400.6
+          ],
+          "minMs": 256.7,
+          "maxMs": 1630.1,
+          "meanMs": 626.36,
+          "medianMs": 400.6,
+          "p95Ms": 1630.1
+        }
+      }
+    },
+    {
+      "route": "/dashboard",
+      "role": "Owner Ateliê",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/dashboard",
+        "usableHeadingMs": 2372.09,
+        "networkIdleMs": 3027.95,
+        "ttfbMs": 2214,
+        "domInteractiveMs": 2299.5,
+        "loadEventMs": 2418.2,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 700894,
+          "totalTransferBytes": 711307,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 46664
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            941.75,
+            964.44,
+            1005.05,
+            983.27,
+            894.68
+          ],
+          "minMs": 894.68,
+          "maxMs": 1005.05,
+          "meanMs": 957.84,
+          "medianMs": 964.44,
+          "p95Ms": 1005.05
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            688.2,
+            750.7,
+            808.1,
+            747.5,
+            667.4
+          ],
+          "minMs": 667.4,
+          "maxMs": 808.1,
+          "meanMs": 732.38,
+          "medianMs": 747.5,
+          "p95Ms": 808.1
+        }
+      }
+    },
+    {
+      "route": "/dashboard/membros",
+      "role": "Owner Ateliê",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/dashboard/membros",
+        "usableHeadingMs": 2051.13,
+        "networkIdleMs": 2844.76,
+        "ttfbMs": 1427,
+        "domInteractiveMs": 1971,
+        "loadEventMs": 2065.9,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 740040,
+          "totalTransferBytes": 750453,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 30670
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            650.65,
+            849.21,
+            757.6,
+            972.27,
+            716.3
+          ],
+          "minMs": 650.65,
+          "maxMs": 972.27,
+          "meanMs": 789.2,
+          "medianMs": 757.6,
+          "p95Ms": 972.27
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            506.8,
+            666,
+            604.4,
+            785.2,
+            551.2
+          ],
+          "minMs": 506.8,
+          "maxMs": 785.2,
+          "meanMs": 622.72,
+          "medianMs": 604.4,
+          "p95Ms": 785.2
+        }
+      }
+    },
+    {
+      "route": "/dashboard/configuracoes",
+      "role": "Owner Ateliê",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/dashboard/configuracoes",
+        "usableHeadingMs": 12673.42,
+        "networkIdleMs": 13421.19,
+        "ttfbMs": 12499.2,
+        "domInteractiveMs": 12605.4,
+        "loadEventMs": 12753.6,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 732628,
+          "totalTransferBytes": 743041,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 29208
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            901.79,
+            911.22,
+            832.17,
+            947.43,
+            886.01
+          ],
+          "minMs": 832.17,
+          "maxMs": 947.43,
+          "meanMs": 895.72,
+          "medianMs": 901.79,
+          "p95Ms": 947.43
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            744,
+            749.2,
+            689.6,
+            735.8,
+            718.9
+          ],
+          "minMs": 689.6,
+          "maxMs": 749.2,
+          "meanMs": 727.5,
+          "medianMs": 735.8,
+          "p95Ms": 749.2
+        }
+      }
+    },
+    {
+      "route": "/dashboard/atividades",
+      "role": "Owner Ateliê",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/dashboard/atividades",
+        "usableHeadingMs": 3185.19,
+        "networkIdleMs": 3860.53,
+        "ttfbMs": 3042.8,
+        "domInteractiveMs": 3126.2,
+        "loadEventMs": 3231.3,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 730156,
+          "totalTransferBytes": 740569,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 30454
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            959.94,
+            901.82,
+            1211.57,
+            928.06,
+            1033.25
+          ],
+          "minMs": 901.82,
+          "maxMs": 1211.57,
+          "meanMs": 1006.93,
+          "medianMs": 959.94,
+          "p95Ms": 1211.57
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            786.2,
+            744.7,
+            1056.9,
+            774.1,
+            823.6
+          ],
+          "minMs": 744.7,
+          "maxMs": 1056.9,
+          "meanMs": 837.1,
+          "medianMs": 786.2,
+          "p95Ms": 1056.9
+        }
+      }
+    },
+    {
+      "route": "/admin",
+      "role": "Platform Admin",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/admin",
+        "usableHeadingMs": 2137.48,
+        "networkIdleMs": 2881.22,
+        "ttfbMs": 1896.5,
+        "domInteractiveMs": 2077.1,
+        "loadEventMs": 2203,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 699309,
+          "totalTransferBytes": 709722,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 41431
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            1258.79,
+            1144.72,
+            1146.29,
+            1211.14,
+            1175.53
+          ],
+          "minMs": 1144.72,
+          "maxMs": 1258.79,
+          "meanMs": 1187.29,
+          "medianMs": 1175.53,
+          "p95Ms": 1258.79
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            1035.1,
+            922.2,
+            876.7,
+            877,
+            939.3
+          ],
+          "minMs": 876.7,
+          "maxMs": 1035.1,
+          "meanMs": 930.06,
+          "medianMs": 922.2,
+          "p95Ms": 1035.1
+        }
+      }
+    },
+    {
+      "route": "/admin/empresas",
+      "role": "Platform Admin",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/admin/empresas",
+        "usableHeadingMs": 3117.95,
+        "networkIdleMs": 3908.46,
+        "ttfbMs": 2950.8,
+        "domInteractiveMs": 3056.4,
+        "loadEventMs": 3205.6,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 732521,
+          "totalTransferBytes": 742934,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 29180
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            985.18,
+            1180.46,
+            1028.68,
+            833.05,
+            1017.24
+          ],
+          "minMs": 833.05,
+          "maxMs": 1180.46,
+          "meanMs": 1008.92,
+          "medianMs": 1017.24,
+          "p95Ms": 1180.46
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            753.3,
+            992.4,
+            845.4,
+            658.5,
+            826.4
+          ],
+          "minMs": 658.5,
+          "maxMs": 992.4,
+          "meanMs": 815.2,
+          "medianMs": 826.4,
+          "p95Ms": 992.4
+        }
+      }
+    },
+    {
+      "route": "/admin/atividades",
+      "role": "Platform Admin",
+      "firstVisit": {
+        "status": 200,
+        "finalUrl": "http://localhost:3000/admin/atividades",
+        "usableHeadingMs": 2896.56,
+        "networkIdleMs": 3699.27,
+        "ttfbMs": 2684.6,
+        "domInteractiveMs": 2825.6,
+        "loadEventMs": 2952.8,
+        "resources": {
+          "totalRequests": 24,
+          "jsRequests": 18,
+          "jsTransferBytes": 730156,
+          "totalTransferBytes": 740569,
+          "rscPrefetchRequests": 0,
+          "docTransferBytes": 33362
+        }
+      },
+      "warmReloads": {
+        "count": 5,
+        "usableHeadingStats": {
+          "samplesMs": [
+            1256.12,
+            2900.22,
+            1298.86,
+            1325.36,
+            1353.22
+          ],
+          "minMs": 1256.12,
+          "maxMs": 2900.22,
+          "meanMs": 1626.76,
+          "medianMs": 1325.36,
+          "p95Ms": 2900.22
+        },
+        "ttfbStats": {
+          "samplesMs": [
+            1058.5,
+            2748.2,
+            1108.6,
+            1160.4,
+            1160.2
+          ],
+          "minMs": 1058.5,
+          "maxMs": 2748.2,
+          "meanMs": 1447.18,
+          "medianMs": 1160.2,
+          "p95Ms": 2748.2
+        }
+      }
+    }
+  ],
+  "clientNavigations": [
+    {
+      "from": "/dashboard",
+      "to": "/dashboard/membros",
+      "label": "Membros",
+      "durationMs": 1663.38,
+      "finalUrl": "http://localhost:3000/dashboard/membros"
+    },
+    {
+      "from": "/dashboard/membros",
+      "to": "/dashboard/configuracoes",
+      "label": "Configurações",
+      "durationMs": 896.72,
+      "finalUrl": "http://localhost:3000/dashboard/configuracoes"
+    },
+    {
+      "from": "/dashboard/configuracoes",
+      "to": "/dashboard/atividades",
+      "label": "Atividades",
+      "durationMs": 864.29,
+      "finalUrl": "http://localhost:3000/dashboard/atividades"
+    },
+    {
+      "from": "/dashboard/atividades",
+      "to": "/dashboard",
+      "label": "Visão Geral",
+      "durationMs": 879.1,
+      "finalUrl": "http://localhost:3000/dashboard"
+    },
+    {
+      "from": "/admin",
+      "to": "/admin/empresas",
+      "label": "Empresas",
+      "durationMs": 1207.72,
+      "finalUrl": "http://localhost:3000/admin/empresas"
+    },
+    {
+      "from": "/admin/empresas",
+      "to": "/admin/atividades",
+      "label": "Atividades Global",
+      "durationMs": 911.02,
+      "finalUrl": "http://localhost:3000/admin/atividades"
+    },
+    {
+      "from": "/admin/atividades",
+      "to": "/admin",
+      "label": "Visão Global",
+      "durationMs": 892.81,
+      "finalUrl": "http://localhost:3000/admin"
+    }
+  ]
+}

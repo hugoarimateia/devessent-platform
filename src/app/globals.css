@@ -1,0 +1,303 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light dark;
+
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
+
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+
+  /* Light Mode — Editorial SaaS Architecture (DevEssent CRM & Retail OS) */
+  --background: #F3F4F8;
+  --surface: #FFFFFF;
+  --surface-sidebar: #F9FAFC;
+  --surface-muted: #ECEEF4;
+  --surface-elevated: #FFFFFF;
+  --surface-border: #DFE3EE;
+
+  --foreground: #10131C;
+  --foreground-muted: #525B70;
+
+  --accent: #5B46E5;
+  --accent-secondary: #4834C8;
+  --accent-foreground: #FFFFFF;
+  --accent-subtle: rgba(91, 70, 229, 0.10);
+
+  /* Tokens dinâmicos resolvidos automaticamente a partir do banco de dados (light -> default) */
+  --t-ink-light: var(--accent);
+  --t-ink-dark: #9B8DF5;
+  --t-fill-light: #10131C;
+  --t-fill-dark: #5B46E5;
+  --t-tint-light: rgba(91, 70, 229, 0.045);
+  --t-tint-dark: rgba(133, 117, 242, 0.085);
+  --t-badge-bg-light: rgba(91, 70, 229, 0.10);
+  --t-badge-bg-dark: rgba(133, 117, 242, 0.16);
+  --t-badge-text-light: #4332B8;
+  --t-badge-text-dark: #B9AEFB;
+  --t-border-light: rgba(91, 70, 229, 0.24);
+  --t-border-dark: rgba(133, 117, 242, 0.34);
+
+  --t-ink: var(--t-ink-light);
+  --t-fill: var(--t-fill-light);
+  --t-tint: var(--t-tint-light);
+  --t-badge-bg: var(--t-badge-bg-light);
+  --t-badge-text: var(--t-badge-text-light);
+  --t-border: var(--t-border-light);
+
+  --status-active: #059669;
+  --status-suspended: #DC2626;
+  --status-pending: #D97706;
+  --status-info: #2563EB;
+
+  --shadow-card: 0 1px 2px 0 rgba(16, 19, 28, 0.04);
+  --shadow-elevated: 0 18px 36px -8px rgba(16, 19, 28, 0.12), 0 4px 12px -2px rgba(16, 19, 28, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --background: #0A0C12;
+    --surface: #12151F;
+    --surface-sidebar: #0D1018;
+    --surface-muted: #181C29;
+    --surface-elevated: #181D2B;
+    --surface-border: #24293B;
+
+    --foreground: #F2F4F8;
+    --foreground-muted: #949DB3;
+
+    --accent: #8575F2;
+    --accent-secondary: #9A8DF7;
+    --accent-foreground: #FFFFFF;
+    --accent-subtle: rgba(133, 117, 242, 0.14);
+
+    --t-ink: var(--t-ink-dark);
+    --t-fill: var(--t-fill-dark);
+    --t-tint: var(--t-tint-dark);
+    --t-badge-bg: var(--t-badge-bg-dark);
+    --t-badge-text: var(--t-badge-text-dark);
+    --t-border: var(--t-border-dark);
+
+    --status-active: #34D399;
+    --status-suspended: #F87171;
+    --status-pending: #FBBF24;
+    --status-info: #60A5FA;
+
+    --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+    --shadow-elevated: 0 18px 36px -8px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  }
+}
+
+:root.dark,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0A0C12;
+  --surface: #12151F;
+  --surface-sidebar: #0D1018;
+  --surface-muted: #181C29;
+  --surface-elevated: #181D2B;
+  --surface-border: #24293B;
+
+  --foreground: #F2F4F8;
+  --foreground-muted: #949DB3;
+
+  --accent: #8575F2;
+  --accent-secondary: #9A8DF7;
+  --accent-foreground: #FFFFFF;
+  --accent-subtle: rgba(133, 117, 242, 0.14);
+
+  --t-ink: var(--t-ink-dark);
+  --t-fill: var(--t-fill-dark);
+  --t-tint: var(--t-tint-dark);
+  --t-badge-bg: var(--t-badge-bg-dark);
+  --t-badge-text: var(--t-badge-text-dark);
+  --t-border: var(--t-border-dark);
+
+  --status-active: #34D399;
+  --status-suspended: #F87171;
+  --status-pending: #FBBF24;
+  --status-info: #60A5FA;
+
+  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+  --shadow-elevated: 0 18px 36px -8px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  text-align: start;
+  margin: 0;
+  padding: 0;
+  overflow-x: clip;
+  accent-color: var(--accent);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), system-ui, -apple-system, sans-serif;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+/* Native <dialog> modal scroll containment & backdrop */
+dialog:modal {
+  overscroll-behavior: contain;
+  color: var(--foreground);
+  background-color: var(--surface-elevated);
+  border: 1px solid var(--surface-border);
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(10, 12, 18, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.overscroll-contain {
+  overscroll-behavior: contain;
+}
+
+/* Responsive Data Table with Container Queries */
+.table-wrapper {
+  container-type: inline-size;
+  overflow-x: auto;
+  max-width: 100%;
+  border-radius: 0.75rem;
+}
+
+.table-wrapper.table-embedded {
+  border-radius: 0;
+}
+
+.table-wrapper:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  background-color: var(--surface-muted);
+  z-index: 1;
+  text-wrap: balance;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@container (width < 580px) {
+  .table-wrapper table.responsive-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .table-wrapper table.responsive-stack,
+  .table-wrapper table.responsive-stack tbody,
+  .table-wrapper table.responsive-stack tr,
+  .table-wrapper table.responsive-stack td {
+    display: block;
+    width: 100%;
+  }
+
+  .table-wrapper table.responsive-stack tr {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--surface-border);
+  }
+
+  .table-wrapper table.responsive-stack td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0;
+    text-align: right;
+  }
+
+  .table-wrapper table.responsive-stack td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--foreground-muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+}
+
+/* HORIZON — DevEssent Platform Splash Backdrop */
+.horizon-backdrop {
+  background-color: #0B0B12;
+  background-image: url("/images/horizon-dark.jpg");
+  background-image: image-set(
+    url("/images/horizon-dark-1x.webp") type("image/webp") 1x,
+    url("/images/horizon-dark-2x.webp") type("image/webp") 2x,
+    url("/images/horizon-dark.jpg") type("image/jpeg") 1x
+  );
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  transition: background-color 280ms ease;
+}
+
+:root[data-theme="light"] .horizon-backdrop {
+  background-color: #F4F2FA;
+  background-image: url("/images/horizon-light.jpg");
+  background-image: image-set(
+    url("/images/horizon-light-1x.webp") type("image/webp") 1x,
+    url("/images/horizon-light-2x.webp") type("image/webp") 2x,
+    url("/images/horizon-light.jpg") type("image/jpeg") 1x
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .horizon-backdrop,
+  .horizon-cta-btn {
+    transition: none !important;
+  }
+}
+
+/* Native top-layer <dialog> scroll containment (modern-web-guidance) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}

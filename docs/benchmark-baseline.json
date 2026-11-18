@@ -1,0 +1,52 @@
+{
+  "supabaseQueries": {
+    "getUserByIdMs": 60.884399999999914,
+    "profileSelectMs": 58.73409999999967,
+    "listUserTenantsMs": 40.47570000000087,
+    "resolveTenantContextMs": 0
+  },
+  "routeBenchmarks": [
+    {
+      "route": "/login",
+      "coldTotalMs": 1873,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 1337,
+      "warmTtfbMs": 0
+    },
+    {
+      "route": "/dashboard",
+      "coldTotalMs": 2264,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 2178,
+      "warmTtfbMs": 0
+    },
+    {
+      "route": "/dashboard/membros",
+      "coldTotalMs": 1861,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 2125,
+      "warmTtfbMs": 0
+    },
+    {
+      "route": "/dashboard/configuracoes",
+      "coldTotalMs": 1719,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 1759,
+      "warmTtfbMs": 0
+    },
+    {
+      "route": "/admin",
+      "coldTotalMs": 1437,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 1403,
+      "warmTtfbMs": 0
+    },
+    {
+      "route": "/admin/atividades",
+      "coldTotalMs": 1385,
+      "coldTtfbMs": 0,
+      "warmTotalMs": 1244,
+      "warmTtfbMs": 0
+    }
+  ]
+}

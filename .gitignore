@@ -1,0 +1,76 @@
+# dependencies
+/node_modules
+/.pnpm-store
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/.next-verify/
+*.tsbuildinfo
+
+# testing
+/coverage
+
+# environment variables
+.env*.local
+.env.development
+.env.development.*
+.env.test
+.env.test.*
+.env.staging
+.env.staging.*
+.env.production
+.env.production.*
+.env
+
+# supabase temp & local runtime
+/supabase/.temp/
+/supabase/.branches/
+
+# keys, certs & sql backups
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+*.dump
+*.bak
+*.backup
+*credentials*.json
+
+# sandbox & xampp local data & credentials
+sandbox-data/.credentials.local.json
+sandbox-data/.sandbox-manifest.json
+sandbox-data/*.local.json
+local-test/xampp/.credentials.local.json
+local-test/xampp/storage/
+
+# do not ignore .env.example
+!.env.example
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# system files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# vitest
+.vitest/
+
+
+# playwright
+/playwright-report/
+/test-results/
