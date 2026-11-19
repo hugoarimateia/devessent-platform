@@ -4,11 +4,11 @@
 
 # next.js
 /.next/
+/.next-*/
 /out/
 
 # production
 /build
-/.next-verify/
 *.tsbuildinfo
 
 # testing
@@ -41,12 +41,16 @@
 *.backup
 *credentials*.json
 
-# sandbox & xampp local data & credentials
+# sandbox, staging & xampp local data & credentials
 sandbox-data/.credentials.local.json
 sandbox-data/.sandbox-manifest.json
 sandbox-data/*.local.json
 local-test/xampp/.credentials.local.json
 local-test/xampp/storage/
+local-test/staging/
+/backups/
+/scratch/
+*.sql.bak
 
 # do not ignore .env.example
 !.env.example

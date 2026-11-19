@@ -299,6 +299,15 @@ export interface RetailOrder {
   createdAt: string;
   updatedAt: string;
   itemCount?: number;
+  // Fase 6D — Estado financeiro independente do ciclo operacional
+  paymentStatus?: RetailPaymentStatus;
+  shippingFeeCents?: number | null;
+  discountCents?: number;
+  paidAmountCents?: number;
+  refundedAmountCents?: number;
+  paidAt?: string | null;
+  hasPaymentShareLink?: boolean;
+  paymentShareExpiresAt?: string | null;
 }
 
 export interface RetailOrderWithDetails extends RetailOrder {
@@ -352,5 +361,241 @@ export interface PublicOrderTrackingView {
   storeSlug: string;
   contactEmail: string | null;
   contactPhone: string | null;
+  // Fase 6D — Informações financeiras seguras na visualização do recibo
+  paymentStatus?: RetailPaymentStatus;
+  shippingFeeCents?: number | null;
+  discountCents?: number;
+  paidAmountCents?: number;
+  refundedAmountCents?: number;
+  paidAt?: string | null;
+  canStartOnlinePayment?: boolean;
+  paymentBlockedReason?: string | null;
+  receiverAccountLabel?: string | null;
+  activeCheckoutUrl?: string | null;
 }
+
+// ==============================================================================
+// FASE 6D: INTEGRAÇÃO DE PAGAMENTOS, CHECKOUT FINANCEIRO E GESTÃO DE RECEBIMENTOS
+// ==============================================================================
+
+export type RetailPaymentProviderName = "mercado_pago" | "xampp_sandbox";
+
+export type RetailPaymentEnvironment = "sandbox";
+
+export type RetailPaymentConnectionStatus =
+  | "connected"
+  | "disconnected"
+  | "expired"
+  | "error";
+
+export type RetailPaymentStatus =
+  | "not_started"
+  | "pending"
+  | "processing"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "cancelled"
+  | "refunded"
+  | "partially_refunded"
+  | "disputed";
+
+export type RetailPaymentMethod =
+  | "pix"
+  | "credit_card"
+  | "debit_card"
+  | "account_money"
+  | "boleto"
+  | "hosted_checkout"
+  | "other";
+
+export type RetailPaymentEventProcessingStatus =
+  | "processed"
+  | "ignored_duplicate"
+  | "ignored_out_of_order"
+  | "rejected_divergence"
+  | "failed_retryable";
+
+/**
+ * Resumo comercial da conexão de pagamento do estabelecimento (Zero Segredos/Tokens).
+ */
+export interface RetailPaymentConnectionSummary {
+  id: string | null;
+  tenantId: string;
+  storeId: string;
+  provider: RetailPaymentProviderName;
+  environment: RetailPaymentEnvironment;
+  status: RetailPaymentConnectionStatus;
+  sellerAccountId: string | null;
+  sellerAccountLabel: string | null;
+  publicKey: string | null;
+  tokenExpiresAt: string | null;
+  connectedAt: string | null;
+  disconnectedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+export interface RetailPayment {
+  id: string;
+  tenantId: string;
+  storeId: string;
+  orderId: string;
+  orderNumber?: string;
+  customerNameMinimized?: string;
+  connectionId: string | null;
+  provider: RetailPaymentProviderName;
+  environment: RetailPaymentEnvironment;
+  externalPaymentId: string | null;
+  externalPreferenceId: string | null;
+  externalReference: string;
+  sellerAccountId: string;
+  currency: string;
+  amountCents: number;
+  refundedAmountCents: number;
+  status: RetailPaymentStatus;
+  paymentMethod: RetailPaymentMethod | null;
+  paymentMethodLabel: string | null;
+  checkoutUrl: string | null;
+  idempotencyKey: string;
+  payerEmailMasked: string | null;
+  divergenceAlert: string | null;
+  approvedAt: string | null;
+  failedAt: string | null;
+  expiredAt: string | null;
+  cancelledAt: string | null;
+  refundedAt: string | null;
+  lastReconciledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetailPaymentAttempt {
+  id: string;
+  tenantId: string;
+  storeId: string;
+  orderId: string;
+  paymentId: string;
+  attemptNumber: number;
+  provider: RetailPaymentProviderName;
+  externalAttemptId: string | null;
+  externalPaymentId: string | null;
+  amountCents: number;
+  currency: string;
+  status: "pending" | "processing" | "paid" | "failed" | "expired" | "cancelled";
+  paymentMethod: string | null;
+  checkoutUrl: string | null;
+  idempotencyKey: string;
+  failureCode: string | null;
+  failureReason: string | null;
+  expiresAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetailPaymentEvent {
+  id: string;
+  tenantId: string;
+  storeId: string;
+  orderId: string | null;
+  paymentId: string | null;
+  provider: RetailPaymentProviderName;
+  externalEventId: string;
+  eventType: string;
+  signatureVerified: boolean;
+  processingStatus: RetailPaymentEventProcessingStatus;
+  previousStatus: string | null;
+  newStatus: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  payloadSummary: Record<string, unknown>;
+  errorMessage: string | null;
+  processedAt: string;
+  createdAt: string;
+}
+
+export interface RetailPaymentWithDetails extends RetailPayment {
+  order: RetailOrder;
+  attempts: RetailPaymentAttempt[];
+  events: RetailPaymentEvent[];
+}
+
+export interface RetailPaymentsFilter {
+  status?: RetailPaymentStatus | "all";
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface RetailPaymentsListResult {
+  payments: RetailPayment[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface RetailPaymentPeriodBucket {
+  periodLabel: string;
+  confirmedCents: number;
+  refundedCents: number;
+  netConfirmedCents: number;
+  paidCount: number;
+}
+
+export interface RetailPaymentStats {
+  /** Valor bruto confirmado pelo provedor (pagamentos paid + partially_refunded) */
+  grossConfirmedCents: number;
+  /** Valor efetivamente recebido após subtrair reembolsos confirmados */
+  netReceivedCents: number;
+  /** Soma em centavos de pagamentos pendentes/em processamento (NÃO integra receita) */
+  pendingCents: number;
+  /** Soma em centavos de tentativas recusadas/expiradas/canceladas */
+  rejectedOrExpiredCents: number;
+  /** Soma em centavos de valores efetivamente reembolsados */
+  refundedCents: number;
+  paidOrdersCount: number;
+  pendingPaymentsCount: number;
+  rejectedPaymentsCount: number;
+  refundedPaymentsCount: number;
+  divergenceAlertsCount: number;
+  periodEvolution: RetailPaymentPeriodBucket[];
+}
+
+/**
+ * Visão pública com escopo mínimo do link opaco de pagamento (/loja/[slug]/pagamento/[shareToken]).
+ * Nunca inclui endereço, telefone, e-mail completo ou token administrativo do pedido (§7).
+ */
+export interface PublicOrderPaymentShareView {
+  orderId: string;
+  orderNumber: string;
+  operationalStatus: RetailOrderStatus;
+  paymentStatus: RetailPaymentStatus;
+  currency: string;
+  subtotalCents: number;
+  shippingFeeCents: number | null;
+  discountCents: number;
+  totalCents: number;
+  paidAmountCents: number;
+  refundedAmountCents: number;
+  customerFirstName: string;
+  deliveryMode: RetailDeliveryMode;
+  storeName: string;
+  storeSlug: string;
+  receiverAccountLabel: string | null;
+  provider: RetailPaymentProviderName | null;
+  canInitiatePayment: boolean;
+  blockedReason: string | null;
+  activeCheckoutUrl: string | null;
+  activePaymentId: string | null;
+  shareExpiresAt: string;
+  items: Array<{
+    productName: string;
+    variantName: string;
+    quantity: number;
+    unitPriceCents: number;
+    lineTotalCents: number;
+  }>;
+}
+
 

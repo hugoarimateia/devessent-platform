@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
   Palette,
   ClipboardList,
+  CreditCard,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { resolveTenantBrand } from "@/lib/theme/tenant-brand";
@@ -84,7 +85,10 @@ export function Sidebar({
   const retailNavItems = [
     { href: "/dashboard/retail", label: "Painel Retail", icon: Store },
     ...(canManageRetailSettings
-      ? [{ href: "/dashboard/retail/pedidos", label: "Pedidos", icon: ClipboardList }]
+      ? [
+          { href: "/dashboard/retail/pedidos", label: "Pedidos", icon: ClipboardList },
+          { href: "/dashboard/retail/pagamentos", label: "Pagamentos", icon: CreditCard },
+        ]
       : []),
     { href: "/dashboard/retail/produtos", label: "Produtos", icon: Package },
     { href: "/dashboard/retail/categorias", label: "Categorias", icon: Tag },
@@ -245,8 +249,7 @@ export function Sidebar({
                     label,
                     icon,
                     pathname === href ||
-                      (href === "/dashboard/retail/produtos" &&
-                        pathname.startsWith("/dashboard/retail/produtos"))
+                      (href !== "/dashboard/retail" && pathname.startsWith(href))
                   )
                 )}
               </nav>

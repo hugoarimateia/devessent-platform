@@ -253,6 +253,66 @@ export const AUDIT_ACTION_CATALOG: Record<string, AuditActionMeta> = {
     category: "comercial",
     tone: "warning",
   },
+  "retail.order_shipping_updated": {
+    action: "retail.order_shipping_updated",
+    label: "Frete do pedido definido",
+    category: "comercial",
+    tone: "info",
+  },
+  "retail.payment_account_connected": {
+    action: "retail.payment_account_connected",
+    label: "Conta de recebimento conectada (Sandbox)",
+    category: "governanca",
+    tone: "success",
+  },
+  "retail.payment_account_disconnected": {
+    action: "retail.payment_account_disconnected",
+    label: "Conta de recebimento desconectada",
+    category: "governanca",
+    tone: "warning",
+  },
+  "retail.payment_share_link_generated": {
+    action: "retail.payment_share_link_generated",
+    label: "Link opaco de pagamento emitido",
+    category: "comercial",
+    tone: "info",
+  },
+  "retail.payment_session_created": {
+    action: "retail.payment_session_created",
+    label: "Sessão de pagamento online iniciada",
+    category: "comercial",
+    tone: "info",
+  },
+  "retail.payment_approved": {
+    action: "retail.payment_approved",
+    label: "Pagamento confirmado pelo gateway",
+    category: "comercial",
+    tone: "success",
+  },
+  "retail.payment_failed": {
+    action: "retail.payment_failed",
+    label: "Pagamento recusado ou expirado",
+    category: "comercial",
+    tone: "warning",
+  },
+  "retail.payment_cancelled": {
+    action: "retail.payment_cancelled",
+    label: "Sessão de pagamento cancelada",
+    category: "comercial",
+    tone: "warning",
+  },
+  "retail.payment_refunded": {
+    action: "retail.payment_refunded",
+    label: "Estorno confirmado pelo gateway",
+    category: "comercial",
+    tone: "warning",
+  },
+  "retail.payment_divergence_blocked": {
+    action: "retail.payment_divergence_blocked",
+    label: "Divergência financeira bloqueada",
+    category: "governanca",
+    tone: "danger",
+  },
 };
 
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
@@ -261,6 +321,8 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   tenant_invitation: "Convite de Acesso",
   tenant_membership: "Integrante / Vínculo",
   retail_order: "Pedido Comercial",
+  retail_payment: "Transação Financeira",
+  retail_payment_connection: "Conexão de Pagamento",
 };
 
 export const AUDIT_FILTER_ACTION_OPTIONS: { value: string; label: string }[] = [

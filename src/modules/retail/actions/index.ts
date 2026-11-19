@@ -5,5 +5,7 @@ export * from "./retail-variant.actions";
 export * from "./retail-image.actions";
 export * from "./retail-cart.actions";
 export * from "./retail-order.actions";
+export * from "./retail-payment.actions";
+
 
 

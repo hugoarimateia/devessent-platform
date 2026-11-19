@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AuthService } from "@/core/auth/services/auth-service";
-import { RetailStoreService } from "@/modules/retail";
+import {
+  RetailPaymentService,
+  RetailStoreService,
+  type RetailPaymentConnectionSummary,
+} from "@/modules/retail";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { SiteCustomizationManager } from "@/components/admin/site-customization-manager";
@@ -28,6 +32,21 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
     "platform_admin"
   );
 
+  const paymentConnections: Record<string, RetailPaymentConnectionSummary> = {};
+  for (const s of stores) {
+    paymentConnections[s.tenantId] = await RetailPaymentService.getConnectionSummary({
+      supabase,
+      context: {
+        userId: sessionUser!.id,
+        tenantId: s.tenantId,
+        tenantName: s.tenantName,
+        slug: s.slug,
+        status: "active",
+        role: "platform_admin",
+      },
+    });
+  }
+
   return (
     <AppShell user={sessionUser!} contextMode="platform">
       <div className="space-y-6">
@@ -36,12 +55,16 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             { label: "Console Global", href: "/admin" },
             { label: "Customização de Sites" },
           ]}
-          eyebrow="Engenharia de Vitrines · Exclusivo DevEssent"
-          title="Customização Técnica de Sites"
-          description="Área interna para definir template, paleta visual, hero institucional e pré-visualizações das lojas dos clientes sem expor controles estruturais no painel operacional."
+          eyebrow="Engenharia de Vitrines & Integrações · Exclusivo DevEssent"
+          title="Customização Técnica & Pagamentos"
+          description="Área interna para definir template, paleta visual, hero institucional e credenciais Sandbox de recebimento das lojas dos clientes sem expor segredos ou controles estruturais no painel operacional."
         />
 
-        <SiteCustomizationManager stores={stores} initialTenantId={tenantId} />
+        <SiteCustomizationManager
+          stores={stores}
+          initialTenantId={tenantId}
+          paymentConnections={paymentConnections}
+        />
       </div>
     </AppShell>
   );

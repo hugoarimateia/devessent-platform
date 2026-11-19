@@ -15,21 +15,33 @@ import {
   Clock,
   AlertCircle,
   MessageCircle,
+  CreditCard,
+  Copy,
+  ExternalLink,
+  Truck,
 } from "lucide-react";
 import type {
   RetailInventoryMode,
   RetailOrderStatus,
   RetailOrderWithDetails,
+  RetailPayment,
+  RetailPaymentConnectionSummary,
 } from "../types/retail.types";
 import {
   ORDER_STATUS_PRESENTATION,
   ORDER_STATUS_TRANSITIONS,
   OrderInvariants,
 } from "../domain/order-invariants";
+import { PaymentInvariants, PAYMENT_STATUS_PRESENTATION } from "../domain/payment-invariants";
 import { ProductInvariants } from "../domain/product-invariants";
 import { updateRetailOrderStatusAction } from "../actions/retail-order.actions";
+import {
+  generateOrderPaymentShareLinkAction,
+  setRetailOrderShippingFeeAction,
+} from "../actions/retail-payment.actions";
 import { DataTable } from "@/components/ui/data-table";
 import { RetailOrderStatusBadge } from "./retail-order-status-badge";
+import { RetailPaymentStatusBadge } from "./retail-payment-status-badge";
 
 interface RetailOrderDetailProps {
   tenantId: string;
@@ -37,6 +49,8 @@ interface RetailOrderDetailProps {
   inventoryMode: RetailInventoryMode;
   order: RetailOrderWithDetails;
   canManageOrders: boolean;
+  paymentConnection?: RetailPaymentConnectionSummary;
+  linkedPayment?: RetailPayment | null;
 }
 
 const ACTION_LABELS: Partial<Record<RetailOrderStatus, string>> = {
@@ -53,6 +67,8 @@ export function RetailOrderDetail({
   inventoryMode,
   order: initialOrder,
   canManageOrders,
+  paymentConnection,
+  linkedPayment,
 }: RetailOrderDetailProps) {
   const router = useRouter();
   const [order, setOrder] = React.useState<RetailOrderWithDetails>(initialOrder);
@@ -62,14 +78,38 @@ export function RetailOrderDetail({
     null
   );
 
+  const [shippingReaisInput, setShippingReaisInput] = React.useState(
+    initialOrder.shippingFeeCents !== null && initialOrder.shippingFeeCents !== undefined
+      ? (initialOrder.shippingFeeCents / 100).toFixed(2)
+      : "0.00"
+  );
+  const [generatedShareLink, setGeneratedShareLink] = React.useState<{
+    sharePath: string;
+    fullShareUrl: string;
+    expiresAt: string;
+  } | null>(null);
+  const [copiedLink, setCopiedLink] = React.useState(false);
+
   React.useEffect(() => {
     setOrder(initialOrder);
+    setShippingReaisInput(
+      initialOrder.shippingFeeCents !== null && initialOrder.shippingFeeCents !== undefined
+        ? (initialOrder.shippingFeeCents / 100).toFixed(2)
+        : "0.00"
+    );
   }, [initialOrder]);
 
+  const currentPaymentStatus = order.paymentStatus || "not_started";
   const statusMeta = ORDER_STATUS_PRESENTATION[order.status];
+  const paymentMeta = PAYMENT_STATUS_PRESENTATION[currentPaymentStatus];
   const allowedNext = ORDER_STATUS_TRANSITIONS[order.status] || [];
   const nextWorkflowStatuses = allowedNext.filter((s) => s !== "cancelled");
   const canCancel = allowedNext.includes("cancelled");
+
+  const paymentEligibility = PaymentInvariants.evaluateOrderPaymentEligibility(
+    order,
+    paymentConnection ?? null
+  );
 
   const customerDigits = OrderInvariants.normalizePhoneDigits(order.customerPhone);
   const customerWhatsAppUrl =
@@ -113,6 +153,83 @@ export function RetailOrderDetail({
     }
   };
 
+  const handleSaveShippingFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isMutating || !canManageOrders) return;
+
+    const numReais = Number(shippingReaisInput.replace(",", "."));
+    const feeCents = Math.round(numReais * 100);
+    if (!Number.isFinite(feeCents) || feeCents < 0) {
+      setFeedback({
+        type: "error",
+        text: "Informe um valor válido de frete (maior ou igual a R$ 0,00).",
+      });
+      return;
+    }
+
+    setIsMutating(true);
+    setFeedback(null);
+    try {
+      const res = await setRetailOrderShippingFeeAction(tenantId, order.id, feeCents);
+      if (!res.success || !res.data) {
+        setFeedback({
+          type: "error",
+          text: res.error || "Não foi possível atualizar o frete do pedido.",
+        });
+        return;
+      }
+      setFeedback({
+        type: "success",
+        text: res.message || "Frete definido com sucesso.",
+      });
+      router.refresh();
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const handleGenerateShareLink = async () => {
+    if (isMutating || !canManageOrders) return;
+    setIsMutating(true);
+    setFeedback(null);
+    try {
+      const res = await generateOrderPaymentShareLinkAction(tenantId, order.id);
+      if (!res.success || !res.data) {
+        setFeedback({
+          type: "error",
+          text: res.error || "Não foi possível gerar o link de pagamento.",
+        });
+        return;
+      }
+      setGeneratedShareLink({
+        sharePath: res.data.sharePath,
+        fullShareUrl: res.data.fullShareUrl,
+        expiresAt: res.data.expiresAt,
+      });
+      setFeedback({
+        type: "success",
+        text: res.message || "Link de pagamento emitido com sucesso.",
+      });
+      router.refresh();
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!generatedShareLink) return;
+    try {
+      await navigator.clipboard.writeText(generatedShareLink.fullShareUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Ignore clipboard failure
+    }
+  };
+
+  const paidAmountCents = order.paidAmountCents ?? 0;
+  const refundedAmountCents = order.refundedAmountCents ?? 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -124,11 +241,12 @@ export function RetailOrderDetail({
             <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Voltar para Pedidos</span>
           </Link>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-2xl font-bold font-display text-foreground tracking-tight">
               Pedido <span className="font-mono">{order.orderNumber}</span>
             </h1>
             <RetailOrderStatusBadge status={order.status} />
+            <RetailPaymentStatusBadge status={currentPaymentStatus} showFullLabel />
             {order.stockDeducted && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
                 Estoque baixado
@@ -143,7 +261,7 @@ export function RetailOrderDetail({
 
         <div className="text-left sm:text-right">
           <span className="text-[11px] font-mono uppercase tracking-wider text-foreground-muted block">
-            Total do Pedido
+            Total Financeiro do Pedido
           </span>
           <span className="text-2xl font-mono font-bold text-foreground tabular-nums">
             {ProductInvariants.formatCentsToCurrency(order.totalCents, order.currency)}
@@ -241,11 +359,29 @@ export function RetailOrderDetail({
               </tbody>
             </DataTable>
 
-            <div className="px-5 py-4 bg-surface-muted/30 border-t border-surface-border flex items-center justify-between text-sm font-bold">
-              <span>Total do Pedido (sem cobrança online)</span>
-              <span className="font-mono tabular-nums">
-                {ProductInvariants.formatCentsToCurrency(order.totalCents, order.currency)}
-              </span>
+            <div className="px-5 py-4 bg-surface-muted/30 border-t border-surface-border space-y-1.5 text-xs">
+              <div className="flex items-center justify-between text-foreground-muted">
+                <span>Subtotal dos itens</span>
+                <span className="font-mono tabular-nums">
+                  {ProductInvariants.formatCentsToCurrency(order.subtotalCents, order.currency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-foreground-muted">
+                <span>
+                  Frete ({order.deliveryMode === "pickup" ? "Retirada na loja" : "Entrega"})
+                </span>
+                <span className="font-mono tabular-nums">
+                  {order.shippingFeeCents === null || order.shippingFeeCents === undefined
+                    ? "A combinar (defina ao lado)"
+                    : ProductInvariants.formatCentsToCurrency(order.shippingFeeCents, order.currency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm font-bold text-foreground pt-1.5 border-t border-surface-border">
+                <span>Total Financeiro do Pedido</span>
+                <span className="font-mono tabular-nums">
+                  {ProductInvariants.formatCentsToCurrency(order.totalCents, order.currency)}
+                </span>
+              </div>
             </div>
           </section>
 
@@ -292,9 +428,166 @@ export function RetailOrderDetail({
           </section>
         </div>
 
-        {/* Coluna Direita: Ações + Cliente */}
+        {/* Coluna Direita: Financeiro + Ações Operacionais + Cliente */}
         <div className="xl:col-span-4 space-y-6">
-          {/* Painel de Transição */}
+          {/* Painel Financeiro & Pagamento Online (Fase 6D) */}
+          <section className="rounded-2xl bg-surface border border-surface-border p-5 space-y-4 shadow-[var(--shadow-card)]">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-accent" />
+                  <h2 className="text-base font-bold font-display text-foreground">
+                    Financeiro & Pagamento
+                  </h2>
+                </div>
+                <p className="text-xs text-foreground-muted mt-1 leading-relaxed">
+                  {paymentMeta?.description}
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30">
+                Sandbox
+              </span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface-muted/50 border border-surface-border space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-foreground-muted">Status Financeiro:</span>
+                <RetailPaymentStatusBadge status={currentPaymentStatus} showFullLabel />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-foreground-muted">Conta Recebedora:</span>
+                <span className="font-semibold text-foreground">
+                  {paymentConnection?.sellerAccountLabel || storeName}
+                </span>
+              </div>
+              {paidAmountCents > 0 && (
+                <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span>Valor Pago Confirmado:</span>
+                  <span className="font-mono">
+                    {ProductInvariants.formatCentsToCurrency(paidAmountCents, order.currency)}
+                  </span>
+                </div>
+              )}
+              {refundedAmountCents > 0 && (
+                <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 font-semibold">
+                  <span>Valor Estornado:</span>
+                  <span className="font-mono">
+                    {ProductInvariants.formatCentsToCurrency(refundedAmountCents, order.currency)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Definição de Frete Determinístico para Delivery */}
+            {canManageOrders &&
+              order.deliveryMode === "delivery" &&
+              order.status !== "completed" &&
+              order.status !== "cancelled" &&
+              currentPaymentStatus !== "paid" &&
+              currentPaymentStatus !== "processing" && (
+                <form
+                  onSubmit={handleSaveShippingFee}
+                  className="p-3.5 rounded-xl border border-surface-border bg-surface-muted/30 space-y-2.5"
+                >
+                  <label
+                    htmlFor="order-shipping-fee-input"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-foreground"
+                  >
+                    <Truck className="w-3.5 h-3.5 text-accent" />
+                    <span>Definir Frete Determinístico (R$)</span>
+                  </label>
+                  <p className="text-[11px] text-foreground-muted leading-snug">
+                    Pedidos com entrega exigem frete definido (&ge; R$ 0,00) antes de liberar o checkout online.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="order-shipping-fee-input"
+                      type="text"
+                      value={shippingReaisInput}
+                      onChange={(e) => setShippingReaisInput(e.target.value)}
+                      className="flex-1 h-9 px-3 rounded-lg border border-surface-border bg-surface text-xs font-mono text-foreground"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isMutating}
+                      className="h-9 px-3.5 rounded-lg bg-surface-card hover:bg-surface-muted border border-surface-border text-xs font-semibold text-foreground transition-colors disabled:opacity-50"
+                    >
+                      Salvar Frete
+                    </button>
+                  </div>
+                </form>
+              )}
+
+            {/* Geração de Link Opaco de Pagamento */}
+            {canManageOrders && (
+              <div className="space-y-3 pt-2 border-t border-surface-border">
+                {paymentEligibility.eligible ? (
+                  <button
+                    type="button"
+                    disabled={isMutating}
+                    data-testid="generate-payment-share-link-btn"
+                    onClick={handleGenerateShareLink}
+                    className="w-full min-h-[40px] px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-[#6C4EF2] to-[#5638DC] text-white shadow-sm hover:brightness-105 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Emitir Link Seguro de Pagamento (72h)</span>
+                  </button>
+                ) : (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
+                    <strong>Pagamento online indisponível no momento:</strong>{" "}
+                    {paymentEligibility.reason}
+                  </div>
+                )}
+
+                {generatedShareLink && (
+                  <div
+                    data-testid="generated-payment-share-box"
+                    className="p-3.5 rounded-xl border border-emerald-500/35 bg-emerald-500/[0.06] space-y-2.5 text-xs"
+                  >
+                    <div className="font-semibold text-emerald-800 dark:text-emerald-200">
+                      Link Público Opaco de Pagamento (Zero PII)
+                    </div>
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedShareLink.fullShareUrl}
+                      className="w-full h-8 px-2.5 rounded-lg border border-surface-border bg-surface font-mono text-[11px] text-foreground"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyShareLink}
+                        className="flex-1 h-8 px-3 rounded-lg bg-surface hover:bg-surface-muted border border-surface-border text-xs font-semibold text-foreground inline-flex items-center justify-center gap-1.5"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiedLink ? "Copiado!" : "Copiar Link"}</span>
+                      </button>
+                      <Link
+                        href={generatedShareLink.sharePath}
+                        target="_blank"
+                        className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold text-white inline-flex items-center justify-center gap-1.5"
+                      >
+                        <span>Abrir Checkout</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                )}
+
+                {linkedPayment && (
+                  <Link
+                    href={`/dashboard/retail/pagamentos/${linkedPayment.id}`}
+                    className="w-full min-h-[38px] px-3.5 py-2 rounded-xl border border-surface-border bg-surface-muted/50 hover:bg-surface-muted text-xs font-semibold text-foreground flex items-center justify-between transition-colors"
+                  >
+                    <span>Auditar Transação & Webhooks</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-accent" />
+                  </Link>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Painel de Transição Operacional */}
           <section className="rounded-2xl bg-surface border border-surface-border p-5 space-y-4 shadow-[var(--shadow-card)]">
             <div>
               <h2 className="text-base font-bold font-display text-foreground">

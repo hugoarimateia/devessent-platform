@@ -60,6 +60,14 @@ export const MANAGER_VISIBLE_AUDIT_ACTIONS = [
   "retail.order_confirmed",
   "retail.order_status_updated",
   "retail.order_cancelled",
+  "retail.order_shipping_updated",
+  "retail.payment_share_link_generated",
+  "retail.payment_session_created",
+  "retail.payment_approved",
+  "retail.payment_failed",
+  "retail.payment_cancelled",
+  "retail.payment_refunded",
+  "retail.payment_divergence_blocked",
 ] as const;
 
 interface PermissionRule {

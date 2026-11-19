@@ -10,5 +10,7 @@ export * from "./components/storefront-cart-trigger";
 export * from "./components/storefront-add-to-cart-panel";
 export * from "./components/storefront-checkout-client";
 export * from "./components/storefront-order-receipt";
+export * from "./components/storefront-payment-share-view";
+
 
 

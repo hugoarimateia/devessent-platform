@@ -5,4 +5,6 @@ export * from "./product.schema";
 export * from "./variant.schema";
 export * from "./image.schema";
 export * from "./order.schema";
+export * from "./payment.schema";
+
 

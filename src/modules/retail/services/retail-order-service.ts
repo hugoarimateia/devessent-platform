@@ -72,6 +72,23 @@ function mapOrderRow(row: OrderRow, itemCount?: number): RetailOrder {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     itemCount,
+    paymentStatus: (row.payment_status as RetailOrder["paymentStatus"]) || "not_started",
+    shippingFeeCents:
+      row.shipping_fee_cents !== undefined && row.shipping_fee_cents !== null
+        ? Number(row.shipping_fee_cents)
+        : row.delivery_mode === "pickup"
+          ? 0
+          : null,
+    discountCents: Number(row.discount_cents || 0),
+    paidAmountCents: Number(row.paid_amount_cents || 0),
+    refundedAmountCents: Number(row.refunded_amount_cents || 0),
+    paidAt: row.paid_at || null,
+    hasPaymentShareLink: Boolean(
+      row.payment_share_token_hash &&
+        row.payment_share_expires_at &&
+        new Date(row.payment_share_expires_at).getTime() > Date.now()
+    ),
+    paymentShareExpiresAt: row.payment_share_expires_at || null,
   };
 }
 
@@ -127,8 +144,37 @@ function translateRpcError(err: { message?: string } | null): Error {
   if (msg.includes("TENANT_SUSPENDED:")) {
     return new ConflictError(msg.replace(/^.*TENANT_SUSPENDED:\s*/i, ""));
   }
-  if (msg.includes("FORBIDDEN:")) {
-    return new ForbiddenError(msg.replace(/^.*FORBIDDEN:\s*/i, ""));
+  if (
+    msg.includes("PAYMENT_IN_PROCESSING:") ||
+    msg.includes("PAYMENT_ALREADY_PAID:") ||
+    msg.includes("PAYMENT_LOCKED:") ||
+    msg.includes("ORDER_ALREADY_PAID:")
+  ) {
+    return new ConflictError(
+      msg.replace(
+        /^.*?(PAYMENT_IN_PROCESSING|PAYMENT_ALREADY_PAID|PAYMENT_LOCKED|ORDER_ALREADY_PAID):\s*/i,
+        ""
+      )
+    );
+  }
+  if (
+    msg.includes("INVALID_SHIPPING_FEE:") ||
+    msg.includes("UNDETERMINED_SHIPPING:") ||
+    msg.includes("ORDER_NOT_CONFIRMED:") ||
+    msg.includes("GATEWAY_NOT_CONNECTED:") ||
+    msg.includes("INVALID_ORDER_TOTAL:")
+  ) {
+    return new ValidationError(
+      msg.replace(
+        /^.*?(INVALID_SHIPPING_FEE|UNDETERMINED_SHIPPING|ORDER_NOT_CONFIRMED|GATEWAY_NOT_CONNECTED|INVALID_ORDER_TOTAL):\s*/i,
+        ""
+      )
+    );
+  }
+  if (msg.includes("FORBIDDEN:") || msg.includes("SELLER_ACCOUNT_MISMATCH:")) {
+    return new ForbiddenError(
+      msg.replace(/^.*?(FORBIDDEN|SELLER_ACCOUNT_MISMATCH):\s*/i, "")
+    );
   }
   return new Error(msg || "Não foi possível processar a atualização do pedido.");
 }
@@ -331,6 +377,17 @@ export class RetailOrderService {
       storeSlug: store.slug || params.storeSlug,
       contactEmail: store.contact_email,
       contactPhone: store.contact_phone,
+      paymentStatus: (order.payment_status as PublicOrderTrackingView["paymentStatus"]) || "not_started",
+      shippingFeeCents:
+        order.shipping_fee_cents !== undefined && order.shipping_fee_cents !== null
+          ? Number(order.shipping_fee_cents)
+          : order.delivery_mode === "pickup"
+            ? 0
+            : null,
+      discountCents: Number(order.discount_cents || 0),
+      paidAmountCents: Number(order.paid_amount_cents || 0),
+      refundedAmountCents: Number(order.refunded_amount_cents || 0),
+      paidAt: order.paid_at || null,
     };
   }
 

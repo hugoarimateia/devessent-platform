@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./domain";
 export * from "./schemas";
 export * from "./permissions";
+export * from "./payments";
 export * from "./services";
 export * from "./actions";
 export * from "./components";

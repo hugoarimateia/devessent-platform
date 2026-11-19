@@ -10,14 +10,24 @@ import {
   ExternalLink,
   Megaphone,
   ShieldCheck,
+  CreditCard,
+  Lock,
 } from "lucide-react";
 import type { AdminRetailStoreOverview } from "@/modules/retail/services/retail-store-service";
-import type { StorefrontTemplate } from "@/modules/retail/types/retail.types";
+import type {
+  RetailPaymentConnectionSummary,
+  StorefrontTemplate,
+} from "@/modules/retail/types/retail.types";
 import { updateStorefrontDesignAction } from "@/modules/retail/actions/retail-store.actions";
+import {
+  connectTenantPaymentAccountAction,
+  disconnectTenantPaymentAccountAction,
+} from "@/modules/retail/actions/retail-payment.actions";
 
 interface SiteCustomizationManagerProps {
   stores: AdminRetailStoreOverview[];
   initialTenantId?: string;
+  paymentConnections?: Record<string, RetailPaymentConnectionSummary>;
 }
 
 /**
@@ -28,6 +38,7 @@ interface SiteCustomizationManagerProps {
 export function SiteCustomizationManager({
   stores,
   initialTenantId,
+  paymentConnections = {},
 }: SiteCustomizationManagerProps) {
   const router = useRouter();
   const [selectedTenantId, setSelectedTenantId] = React.useState<string>(
@@ -38,6 +49,32 @@ export function SiteCustomizationManager({
     () => stores.find((s) => s.tenantId === selectedTenantId) || stores[0] || null,
     [stores, selectedTenantId]
   );
+
+  const [localConnections, setLocalConnections] = React.useState<
+    Record<string, RetailPaymentConnectionSummary>
+  >(paymentConnections);
+
+  React.useEffect(() => {
+    setLocalConnections(paymentConnections);
+  }, [paymentConnections]);
+
+  const currentPaymentConn = selectedStore
+    ? localConnections[selectedStore.tenantId]
+    : undefined;
+
+  const [sellerAccountId, setSellerAccountId] = React.useState(
+    currentPaymentConn?.sellerAccountId || ""
+  );
+  const [sellerAccountLabel, setSellerAccountLabel] = React.useState(
+    currentPaymentConn?.sellerAccountLabel || ""
+  );
+  const [sandboxAccessToken, setSandboxAccessToken] = React.useState("");
+  const [sandboxWebhookSecret, setSandboxWebhookSecret] = React.useState("");
+  const [paymentLoading, setPaymentLoading] = React.useState(false);
+  const [paymentFeedback, setPaymentFeedback] = React.useState<{
+    text: string;
+    error?: boolean;
+  } | null>(null);
 
   const [template, setTemplate] = React.useState<StorefrontTemplate>(
     selectedStore?.template || "editorial"
@@ -72,7 +109,11 @@ export function SiteCustomizationManager({
     setAccentColor(selectedStore.accentColor || "#111111");
     setSecondaryColor(selectedStore.secondaryColor || "#f4f3f0");
     setFeedback(null);
-  }, [selectedStore]);
+    const conn = paymentConnections[selectedStore.tenantId];
+    setSellerAccountId(conn?.sellerAccountId || `MP-SANDBOX-${selectedStore.slug.toUpperCase()}`);
+    setSellerAccountLabel(conn?.sellerAccountLabel || `${selectedStore.storeName} Recebimentos`);
+    setPaymentFeedback(null);
+  }, [selectedStore, paymentConnections]);
 
   if (!selectedStore) {
     return (
@@ -405,6 +446,232 @@ export function SiteCustomizationManager({
             </button>
           </div>
         </form>
+      </section>
+
+      {/* Governança Técnica do Gateway de Pagamentos do Lojista (Sandbox) */}
+      <section className="rounded-2xl border border-surface-border bg-surface p-6 sm:p-8 shadow-[var(--shadow-card)] space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-surface-border pb-4">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <CreditCard className="w-5 h-5" aria-hidden="true" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-lg font-bold text-foreground">
+                  Gateway de Pagamentos do Lojista — {selectedStore.storeName}
+                </h2>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30">
+                  Sandbox Fail-Closed
+                </span>
+              </div>
+              <p className="text-xs text-foreground-muted">
+                Vincule a conta recebedora isolada do estabelecimento. Os tokens são criptografados com AES-256-GCM e jamais ficam visíveis ao lojista.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {currentPaymentConn?.status === "connected" ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                Conta Sandbox Ativa ({currentPaymentConn.sellerAccountId})
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-xs font-semibold">
+                Desconectada
+              </span>
+            )}
+          </div>
+        </div>
+
+        {paymentFeedback && (
+          <div
+            role="status"
+            className={`p-3.5 rounded-xl text-xs flex items-center justify-between border ${
+              paymentFeedback.error
+                ? "bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300"
+                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+            }`}
+          >
+            <span>{paymentFeedback.text}</span>
+            <button
+              type="button"
+              onClick={() => setPaymentFeedback(null)}
+              className="font-bold text-xs px-2 cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="admin-seller-account-id"
+              className="block text-xs font-semibold text-foreground mb-1.5"
+            >
+              Seller Account ID (Mercado Pago Sandbox)
+            </label>
+            <input
+              id="admin-seller-account-id"
+              type="text"
+              value={sellerAccountId}
+              onChange={(e) => setSellerAccountId(e.target.value)}
+              placeholder="Ex: MP-SANDBOX-VERTICE-01"
+              className="w-full px-3.5 py-2.5 rounded-[10px] bg-background border border-surface-border text-xs sm:text-sm font-mono text-foreground"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="admin-seller-account-label"
+              className="block text-xs font-semibold text-foreground mb-1.5"
+            >
+              Identificação Comercial da Conta Recebedora
+            </label>
+            <input
+              id="admin-seller-account-label"
+              type="text"
+              value={sellerAccountLabel}
+              onChange={(e) => setSellerAccountLabel(e.target.value)}
+              placeholder="Ex: Vértice Studio Recebimentos"
+              className="w-full px-3.5 py-2.5 rounded-[10px] bg-background border border-surface-border text-xs sm:text-sm text-foreground"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="admin-sandbox-access-token"
+              className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1.5"
+            >
+              <Lock className="w-3.5 h-3.5 text-accent" />
+              <span>Access Token do Vendedor (Apenas Sandbox)</span>
+            </label>
+            <input
+              id="admin-sandbox-access-token"
+              type="password"
+              autoComplete="new-password"
+              value={sandboxAccessToken}
+              onChange={(e) => setSandboxAccessToken(e.target.value)}
+              placeholder="Cole o Access Token Sandbox (TEST-...)"
+              className="w-full px-3.5 py-2.5 rounded-[10px] bg-background border border-surface-border text-xs sm:text-sm font-mono text-foreground"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="admin-sandbox-webhook-secret"
+              className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1.5"
+            >
+              <Lock className="w-3.5 h-3.5 text-accent" />
+              <span>Webhook Signing Secret (HMAC-SHA256)</span>
+            </label>
+            <input
+              id="admin-sandbox-webhook-secret"
+              type="password"
+              autoComplete="new-password"
+              value={sandboxWebhookSecret}
+              onChange={(e) => setSandboxWebhookSecret(e.target.value)}
+              placeholder="Informe o segredo HMAC sandbox para webhooks"
+              className="w-full px-3.5 py-2.5 rounded-[10px] bg-background border border-surface-border text-xs sm:text-sm font-mono text-foreground"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-surface-border">
+          {currentPaymentConn?.status === "connected" && (
+            <button
+              type="button"
+              disabled={paymentLoading}
+              onClick={async () => {
+                setPaymentLoading(true);
+                setPaymentFeedback(null);
+                const res = await disconnectTenantPaymentAccountAction(
+                  selectedStore.tenantId
+                );
+                setPaymentLoading(false);
+                if (!res.success) {
+                  setPaymentFeedback({
+                    text: res.error || "Falha ao desconectar conta Sandbox.",
+                    error: true,
+                  });
+                } else {
+                  setLocalConnections((prev) => ({
+                    ...prev,
+                    [selectedStore.tenantId]: {
+                      ...(prev[selectedStore.tenantId] || {
+                        id: null,
+                        tenantId: selectedStore.tenantId,
+                        storeId: selectedStore.id,
+                        provider: "mercado_pago",
+                        environment: "sandbox",
+                        sellerAccountId: null,
+                        sellerAccountLabel: null,
+                        publicKey: null,
+                        tokenExpiresAt: null,
+                        connectedAt: null,
+                        disconnectedAt: new Date().toISOString(),
+                        lastVerifiedAt: null,
+                      }),
+                      status: "disconnected",
+                    },
+                  }));
+                  setPaymentFeedback({
+                    text: res.message || "Conta desconectada com sucesso.",
+                  });
+                  router.refresh();
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors disabled:opacity-50"
+            >
+              Desconectar Conta Sandbox
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={paymentLoading}
+            onClick={async () => {
+              setPaymentLoading(true);
+              setPaymentFeedback(null);
+              const res = await connectTenantPaymentAccountAction({
+                tenantId: selectedStore.tenantId,
+                sellerAccountId: sellerAccountId.trim(),
+                sellerAccountLabel: sellerAccountLabel.trim(),
+                accessToken: sandboxAccessToken.trim(),
+                webhookSecret: sandboxWebhookSecret.trim(),
+              });
+              setPaymentLoading(false);
+              if (!res.success) {
+                setPaymentFeedback({
+                  text: res.error || "Falha ao conectar conta Sandbox.",
+                  error: true,
+                });
+              } else {
+                if (res.data) {
+                  setLocalConnections((prev) => ({
+                    ...prev,
+                    [selectedStore.tenantId]: res.data!,
+                  }));
+                }
+                setPaymentFeedback({
+                  text:
+                    res.message ||
+                    "Conta de recebimento Sandbox conectada com sucesso.",
+                });
+                router.refresh();
+              }
+            }}
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>
+              {paymentLoading
+                ? "Criptografando e Salvando..."
+                : "Conectar / Atualizar Conta Sandbox"}
+            </span>
+          </button>
+        </div>
       </section>
     </div>
   );

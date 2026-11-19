@@ -62,6 +62,21 @@ export const RATE_LIMIT_POLICIES = {
     message:
       "Muitas solicitações de pedido enviadas em sequência. Aguarde alguns minutos antes de tentar novamente.",
   },
+  retailPaymentSession: {
+    scope: "retail:payment_session",
+    maxAttempts: 15,
+    windowSeconds: 300,
+    blockSeconds: 300,
+    message:
+      "Muitas tentativas de inicialização de pagamento em sequência. Aguarde alguns minutos antes de tentar novamente.",
+  },
+  retailPaymentWebhook: {
+    scope: "retail:payment_webhook",
+    maxAttempts: 120,
+    windowSeconds: 60,
+    blockSeconds: 120,
+    message: "Limite de notificações de webhook excedido para esta origem.",
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 function hashIdentifier(raw: string): string {

@@ -11,6 +11,7 @@ import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
 import {
   RetailOrderDetail,
   RetailOrderService,
+  RetailPaymentService,
   RetailPermissionService,
   RetailStoreService,
 } from "@/modules/retail";
@@ -95,6 +96,18 @@ export default async function RetailOrderDetailPage({ params }: RetailOrderDetai
     "manage_retail_orders"
   );
 
+  const [paymentConnection, linkedPayment] = await Promise.all([
+    RetailPaymentService.getConnectionSummary({
+      supabase,
+      context: activeContext,
+    }),
+    RetailPaymentService.getPaymentByOrderId({
+      supabase,
+      context: activeContext,
+      orderId: order.id,
+    }),
+  ]);
+
   return (
     <AppShell
       user={sessionUser}
@@ -109,6 +122,8 @@ export default async function RetailOrderDetailPage({ params }: RetailOrderDetai
         inventoryMode={store.inventoryMode}
         order={order}
         canManageOrders={canManageOrders}
+        paymentConnection={paymentConnection}
+        linkedPayment={linkedPayment}
       />
     </AppShell>
   );

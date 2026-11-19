@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   RetailOrderService,
+  RetailPaymentService,
   RetailStorefrontService,
   StorefrontLayoutResolver,
   StorefrontOrderReceipt,
@@ -72,6 +73,9 @@ export default async function StorefrontOrderReceiptPage({
     notFound();
   }
 
+  const enrichedOrder =
+    await RetailPaymentService.enrichPublicOrderTrackingWithPayment(trackedOrder);
+
   const activeTemplate = resolveActiveTemplate(store.template, previewTemplate);
 
   return (
@@ -81,7 +85,7 @@ export default async function StorefrontOrderReceiptPage({
       previewTemplate={previewTemplate}
     >
       <StorefrontOrderReceipt
-        order={trackedOrder}
+        order={enrichedOrder}
         template={activeTemplate}
         previewTemplate={previewTemplate}
       />

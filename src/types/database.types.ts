@@ -854,14 +854,62 @@ isOneToOne: false
                   Relationships: []
                 },"retail_orders": {
                   Row: {
-                    "cancellation_reason": string | null,"cancelled_at": string | null,"cart_id": string | null,"channel": string,"completed_at": string | null,"confirmed_at": string | null,"created_at": string,"currency": string,"customer_email": string | null,"customer_name": string,"customer_phone": string,"delivery_address": string | null,"delivery_mode": string,"id": string,"idempotency_key": string | null,"notes": string | null,"order_number": string,"public_token_hash": string,"status": string,"stock_deducted": boolean,"store_id": string,"subtotal_cents": number,"tenant_id": string,"total_cents": number,"updated_at": string
+                    "cancellation_reason": string | null,"cancelled_at": string | null,"cart_id": string | null,"channel": string,"completed_at": string | null,"confirmed_at": string | null,"created_at": string,"currency": string,"customer_email": string | null,"customer_name": string,"customer_phone": string,"delivery_address": string | null,"delivery_mode": string,"discount_cents": number,"id": string,"idempotency_key": string | null,"notes": string | null,"order_number": string,"paid_amount_cents": number,"paid_at": string | null,"payment_share_expires_at": string | null,"payment_share_token_hash": string | null,"payment_status": string,"public_token_hash": string,"refunded_amount_cents": number,"shipping_fee_cents": number | null,"status": string,"stock_deducted": boolean,"store_id": string,"subtotal_cents": number,"tenant_id": string,"total_cents": number,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"cart_id"?: string | null,"channel"?: string,"completed_at"?: string | null,"confirmed_at"?: string | null,"created_at"?: string,"currency"?: string,"customer_email"?: string | null,"customer_name": string,"customer_phone": string,"delivery_address"?: string | null,"delivery_mode"?: string,"id"?: string,"idempotency_key"?: string | null,"notes"?: string | null,"order_number": string,"public_token_hash": string,"status"?: string,"stock_deducted"?: boolean,"store_id": string,"subtotal_cents": number,"tenant_id": string,"total_cents": number,"updated_at"?: string
+                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"cart_id"?: string | null,"channel"?: string,"completed_at"?: string | null,"confirmed_at"?: string | null,"created_at"?: string,"currency"?: string,"customer_email"?: string | null,"customer_name": string,"customer_phone": string,"delivery_address"?: string | null,"delivery_mode"?: string,"discount_cents"?: number,"id"?: string,"idempotency_key"?: string | null,"notes"?: string | null,"order_number": string,"paid_amount_cents"?: number,"paid_at"?: string | null,"payment_share_expires_at"?: string | null,"payment_share_token_hash"?: string | null,"payment_status"?: string,"public_token_hash": string,"refunded_amount_cents"?: number,"shipping_fee_cents"?: number | null,"status"?: string,"stock_deducted"?: boolean,"store_id": string,"subtotal_cents": number,"tenant_id": string,"total_cents": number,"updated_at"?: string
                   }
                   Update: {
-                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"cart_id"?: string | null,"channel"?: string,"completed_at"?: string | null,"confirmed_at"?: string | null,"created_at"?: string,"currency"?: string,"customer_email"?: string | null,"customer_name"?: string,"customer_phone"?: string,"delivery_address"?: string | null,"delivery_mode"?: string,"id"?: string,"idempotency_key"?: string | null,"notes"?: string | null,"order_number"?: string,"public_token_hash"?: string,"status"?: string,"stock_deducted"?: boolean,"store_id"?: string,"subtotal_cents"?: number,"tenant_id"?: string,"total_cents"?: number,"updated_at"?: string
+                    "cancellation_reason"?: string | null,"cancelled_at"?: string | null,"cart_id"?: string | null,"channel"?: string,"completed_at"?: string | null,"confirmed_at"?: string | null,"created_at"?: string,"currency"?: string,"customer_email"?: string | null,"customer_name"?: string,"customer_phone"?: string,"delivery_address"?: string | null,"delivery_mode"?: string,"discount_cents"?: number,"id"?: string,"idempotency_key"?: string | null,"notes"?: string | null,"order_number"?: string,"paid_amount_cents"?: number,"paid_at"?: string | null,"payment_share_expires_at"?: string | null,"payment_share_token_hash"?: string | null,"payment_status"?: string,"public_token_hash"?: string,"refunded_amount_cents"?: number,"shipping_fee_cents"?: number | null,"status"?: string,"stock_deducted"?: boolean,"store_id"?: string,"subtotal_cents"?: number,"tenant_id"?: string,"total_cents"?: number,"updated_at"?: string
+                  }
+                  Relationships: []
+                },"retail_payment_connections": {
+                  Row: {
+                    "access_token_encrypted": string | null,"connected_at": string | null,"connected_by_user_id": string | null,"created_at": string,"disconnected_at": string | null,"environment": string,"id": string,"last_verified_at": string | null,"metadata": Json,"provider": string,"public_key": string | null,"refresh_token_encrypted": string | null,"scopes": (string)[],"seller_account_id": string | null,"seller_account_label": string | null,"status": string,"store_id": string,"tenant_id": string,"token_expires_at": string | null,"updated_at": string,"webhook_secret_encrypted": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "access_token_encrypted"?: string | null,"connected_at"?: string | null,"connected_by_user_id"?: string | null,"created_at"?: string,"disconnected_at"?: string | null,"environment"?: string,"id"?: string,"last_verified_at"?: string | null,"metadata"?: Json,"provider": string,"public_key"?: string | null,"refresh_token_encrypted"?: string | null,"scopes"?: (string)[],"seller_account_id"?: string | null,"seller_account_label"?: string | null,"status"?: string,"store_id": string,"tenant_id": string,"token_expires_at"?: string | null,"updated_at"?: string,"webhook_secret_encrypted"?: string | null
+                  }
+                  Update: {
+                    "access_token_encrypted"?: string | null,"connected_at"?: string | null,"connected_by_user_id"?: string | null,"created_at"?: string,"disconnected_at"?: string | null,"environment"?: string,"id"?: string,"last_verified_at"?: string | null,"metadata"?: Json,"provider"?: string,"public_key"?: string | null,"refresh_token_encrypted"?: string | null,"scopes"?: (string)[],"seller_account_id"?: string | null,"seller_account_label"?: string | null,"status"?: string,"store_id"?: string,"tenant_id"?: string,"token_expires_at"?: string | null,"updated_at"?: string,"webhook_secret_encrypted"?: string | null
+                  }
+                  Relationships: []
+                },"retail_payments": {
+                  Row: {
+                    "amount_cents": number,"approved_at": string | null,"cancelled_at": string | null,"checkout_url": string | null,"connection_id": string | null,"created_at": string,"currency": string,"divergence_alert": string | null,"environment": string,"expired_at": string | null,"external_payment_id": string | null,"external_preference_id": string | null,"external_reference": string,"failed_at": string | null,"id": string,"idempotency_key": string,"last_reconciled_at": string | null,"metadata": Json,"order_id": string,"payer_email_masked": string | null,"payment_method": string | null,"payment_method_label": string | null,"provider": string,"refunded_amount_cents": number,"refunded_at": string | null,"seller_account_id": string,"status": string,"store_id": string,"tenant_id": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "amount_cents": number,"approved_at"?: string | null,"cancelled_at"?: string | null,"checkout_url"?: string | null,"connection_id"?: string | null,"created_at"?: string,"currency"?: string,"divergence_alert"?: string | null,"environment"?: string,"expired_at"?: string | null,"external_payment_id"?: string | null,"external_preference_id"?: string | null,"external_reference": string,"failed_at"?: string | null,"id"?: string,"idempotency_key": string,"last_reconciled_at"?: string | null,"metadata"?: Json,"order_id": string,"payer_email_masked"?: string | null,"payment_method"?: string | null,"payment_method_label"?: string | null,"provider": string,"refunded_amount_cents"?: number,"refunded_at"?: string | null,"seller_account_id": string,"status"?: string,"store_id": string,"tenant_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "amount_cents"?: number,"approved_at"?: string | null,"cancelled_at"?: string | null,"checkout_url"?: string | null,"connection_id"?: string | null,"created_at"?: string,"currency"?: string,"divergence_alert"?: string | null,"environment"?: string,"expired_at"?: string | null,"external_payment_id"?: string | null,"external_preference_id"?: string | null,"external_reference"?: string,"failed_at"?: string | null,"id"?: string,"idempotency_key"?: string,"last_reconciled_at"?: string | null,"metadata"?: Json,"order_id"?: string,"payer_email_masked"?: string | null,"payment_method"?: string | null,"payment_method_label"?: string | null,"provider"?: string,"refunded_amount_cents"?: number,"refunded_at"?: string | null,"seller_account_id"?: string,"status"?: string,"store_id"?: string,"tenant_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: []
+                },"retail_payment_attempts": {
+                  Row: {
+                    "amount_cents": number,"attempt_number": number,"checkout_url": string | null,"completed_at": string | null,"created_at": string,"currency": string,"expires_at": string | null,"external_attempt_id": string | null,"external_payment_id": string | null,"failure_code": string | null,"failure_reason": string | null,"id": string,"idempotency_key": string,"metadata": Json,"order_id": string,"payment_id": string,"payment_method": string | null,"provider": string,"status": string,"store_id": string,"tenant_id": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "amount_cents": number,"attempt_number": number,"checkout_url"?: string | null,"completed_at"?: string | null,"created_at"?: string,"currency"?: string,"expires_at"?: string | null,"external_attempt_id"?: string | null,"external_payment_id"?: string | null,"failure_code"?: string | null,"failure_reason"?: string | null,"id"?: string,"idempotency_key": string,"metadata"?: Json,"order_id": string,"payment_id": string,"payment_method"?: string | null,"provider": string,"status"?: string,"store_id": string,"tenant_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "amount_cents"?: number,"attempt_number"?: number,"checkout_url"?: string | null,"completed_at"?: string | null,"created_at"?: string,"currency"?: string,"expires_at"?: string | null,"external_attempt_id"?: string | null,"external_payment_id"?: string | null,"failure_code"?: string | null,"failure_reason"?: string | null,"id"?: string,"idempotency_key"?: string,"metadata"?: Json,"order_id"?: string,"payment_id"?: string,"payment_method"?: string | null,"provider"?: string,"status"?: string,"store_id"?: string,"tenant_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: []
+                },"retail_payment_events": {
+                  Row: {
+                    "amount_cents": number | null,"created_at": string,"currency": string | null,"error_message": string | null,"event_type": string,"external_event_id": string,"id": string,"new_status": string | null,"order_id": string | null,"payload_summary": Json,"payment_id": string | null,"previous_status": string | null,"processed_at": string,"processing_status": string,"provider": string,"signature_verified": boolean,"store_id": string,"tenant_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "amount_cents"?: number | null,"created_at"?: string,"currency"?: string | null,"error_message"?: string | null,"event_type": string,"external_event_id": string,"id"?: string,"new_status"?: string | null,"order_id"?: string | null,"payload_summary"?: Json,"payment_id"?: string | null,"previous_status"?: string | null,"processed_at"?: string,"processing_status"?: string,"provider": string,"signature_verified"?: boolean,"store_id": string,"tenant_id": string
+                  }
+                  Update: {
+                    "amount_cents"?: number | null,"created_at"?: string,"currency"?: string | null,"error_message"?: string | null,"event_type"?: string,"external_event_id"?: string,"id"?: string,"new_status"?: string | null,"order_id"?: string | null,"payload_summary"?: Json,"payment_id"?: string | null,"previous_status"?: string | null,"processed_at"?: string,"processing_status"?: string,"provider"?: string,"signature_verified"?: boolean,"store_id"?: string,"tenant_id"?: string
                   }
                   Relationships: []
                 },"tenant_invitations": {
@@ -1001,6 +1049,23 @@ isOneToOne: true
                            },
 "transition_retail_order_status":
 { Args: { "p_actor_name"?: string,"p_actor_user_id"?: string | null,"p_next_status": string,"p_order_id": string,"p_reason"?: string,"p_tenant_id": string }; Returns: Database["public"]["Tables"]["retail_orders"]["Row"]
+                           },
+"get_retail_payment_connection_summary":
+{ Args: { "p_tenant_id": string }; Returns: {
+              "connected_at": string | null,"disconnected_at": string | null,"environment": string,"id": string,"last_verified_at": string | null,"provider": string,"public_key": string | null,"seller_account_id": string | null,"seller_account_label": string | null,"status": string,"store_id": string,"tenant_id": string,"token_expires_at": string | null
+            }[]
+                           },
+"set_retail_order_shipping_fee":
+{ Args: { "p_actor_name"?: string,"p_actor_user_id"?: string | null,"p_order_id": string,"p_shipping_fee_cents": number,"p_tenant_id": string }; Returns: Database["public"]["Tables"]["retail_orders"]["Row"]
+                           },
+"create_retail_payment_session_tx":
+{ Args: { "p_checkout_url": string,"p_expires_at"?: string | null,"p_external_preference_id": string,"p_external_reference": string,"p_idempotency_key": string,"p_metadata"?: Json,"p_order_id": string,"p_payer_email_masked"?: string | null,"p_provider": string,"p_seller_account_id": string,"p_tenant_id": string }; Returns: Json
+                           },
+"reconcile_retail_payment_tx":
+{ Args: { "p_authoritative_amount_cents": number,"p_authoritative_currency": string,"p_authoritative_status": string,"p_event_type": string,"p_external_event_id": string,"p_external_payment_id": string | null,"p_external_reference": string,"p_failure_code"?: string | null,"p_failure_reason"?: string | null,"p_payload_summary"?: Json,"p_payment_id": string,"p_payment_method"?: string | null,"p_payment_method_label"?: string | null,"p_provider": string,"p_seller_account_id": string,"p_signature_verified": boolean,"p_tenant_id": string }; Returns: Json
+                           },
+"record_retail_payment_refund_tx":
+{ Args: { "p_actor_user_id"?: string | null,"p_external_refund_id": string,"p_payload_summary"?: Json,"p_payment_id": string,"p_provider": string,"p_reason"?: string,"p_refund_amount_cents": number,"p_tenant_id": string }; Returns: Json
                            }
           }
           Enums: {

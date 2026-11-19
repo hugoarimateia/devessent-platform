@@ -94,6 +94,14 @@ interface OrderRow extends RowDataPacket {
   created_at: string | Date;
   updated_at: string | Date;
   item_count?: number;
+  payment_status?: RetailOrder["paymentStatus"];
+  shipping_fee_cents?: number | null;
+  discount_cents?: number;
+  paid_amount_cents?: number;
+  refunded_amount_cents?: number;
+  paid_at?: string | Date | null;
+  payment_share_token_hash?: string | null;
+  payment_share_expires_at?: string | Date | null;
 }
 
 interface OrderItemRow extends RowDataPacket {
@@ -177,6 +185,23 @@ export class XamppRetailOrderAdapter {
       createdAt: toIsoString(row.created_at) || new Date().toISOString(),
       updatedAt: toIsoString(row.updated_at) || new Date().toISOString(),
       itemCount: row.item_count !== undefined ? Number(row.item_count) : undefined,
+      paymentStatus: (row.payment_status as RetailOrder["paymentStatus"]) || "not_started",
+      shippingFeeCents:
+        row.shipping_fee_cents !== undefined && row.shipping_fee_cents !== null
+          ? Number(row.shipping_fee_cents)
+          : row.delivery_mode === "pickup"
+            ? 0
+            : null,
+      discountCents: Number(row.discount_cents || 0),
+      paidAmountCents: Number(row.paid_amount_cents || 0),
+      refundedAmountCents: Number(row.refunded_amount_cents || 0),
+      paidAt: toIsoString(row.paid_at),
+      hasPaymentShareLink: Boolean(
+        row.payment_share_token_hash &&
+          row.payment_share_expires_at &&
+          new Date(row.payment_share_expires_at).getTime() > Date.now()
+      ),
+      paymentShareExpiresAt: toIsoString(row.payment_share_expires_at),
     };
   }
 
@@ -1035,6 +1060,22 @@ export class XamppRetailOrderAdapter {
       }
 
       OrderInvariants.assertValidTransition(order.status, "cancelled");
+
+      if (order.payment_status === "processing") {
+        throw new ConflictError(
+          "Há um pagamento em processamento para este pedido. Verifique o estado no provedor antes de cancelar."
+        );
+      }
+
+      if (
+        order.payment_status === "paid" ||
+        order.payment_status === "partially_refunded" ||
+        order.payment_status === "disputed"
+      ) {
+        throw new ConflictError(
+          "Pedido possui pagamento confirmado. Realize e confirme o reembolso total no provedor antes de cancelar o pedido."
+        );
+      }
 
       if (Boolean(order.stock_deducted)) {
         const [items] = await conn.execute<OrderItemRow[]>(

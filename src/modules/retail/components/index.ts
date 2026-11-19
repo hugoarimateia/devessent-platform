@@ -7,5 +7,9 @@ export * from "./retail-module-inactive";
 export * from "./retail-order-status-badge";
 export * from "./retail-orders-table";
 export * from "./retail-order-detail";
+export * from "./retail-payment-status-badge";
+export * from "./retail-payments-table";
+export * from "./retail-payment-detail";
+
 
 

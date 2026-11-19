@@ -21,6 +21,7 @@ import { ProductInvariants } from "../domain/product-invariants";
 import { DataTable } from "@/components/ui/data-table";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { RetailOrderStatusBadge } from "./retail-order-status-badge";
+import { RetailPaymentStatusBadge } from "./retail-payment-status-badge";
 
 interface RetailOrdersTableProps {
   orders: RetailOrder[];
@@ -262,7 +263,10 @@ export function RetailOrdersTable({
                   </td>
 
                   <td data-label="Status" className="py-3.5 px-4">
-                    <RetailOrderStatusBadge status={order.status} />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <RetailOrderStatusBadge status={order.status} />
+                      <RetailPaymentStatusBadge status={order.paymentStatus} />
+                    </div>
                   </td>
 
                   <td data-label="Detalhes" className="py-3.5 px-5 text-right">

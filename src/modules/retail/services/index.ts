@@ -6,4 +6,6 @@ export * from "./retail-image-service";
 export * from "./retail-storefront-service";
 export * from "./retail-cart-service";
 export * from "./retail-order-service";
+export * from "./retail-payment-service";
+
 
