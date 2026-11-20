@@ -1,0 +1,296 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   DevEssent — Design Tokens Oficiais (GUIA_IDENTIDADE.md & tokens.css)
+   ============================================================================ */
+:root {
+  --de-bg: #0B0B0B;
+  --de-surface: #1A1A1A;
+  --de-surface-elevated: #24212D;
+  --de-accent: #A782FF;
+  --de-accent-soft: #B695FF;
+  --de-text: #E9E7DF;
+  --de-text-muted: #BAB5C5;
+  --de-atmosphere: #161124;
+  --de-border: rgba(233, 231, 223, 0.22);
+  --de-border-subtle: rgba(233, 231, 223, 0.12);
+  --de-border-accent: rgba(167, 130, 255, 0.45);
+  --de-radius-card: 16px;
+  --de-radius-button: 10px;
+}
+
+@theme inline {
+  --color-de-bg: var(--de-bg);
+  --color-de-surface: var(--de-surface);
+  --color-de-surface-elevated: var(--de-surface-elevated);
+  --color-de-accent: var(--de-accent);
+  --color-de-accent-soft: var(--de-accent-soft);
+  --color-de-text: var(--de-text);
+  --color-de-text-muted: var(--de-text-muted);
+  --color-de-atmosphere: var(--de-atmosphere);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-tech: var(--font-orbitron), ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ============================================================================
+   Reset & Base Editorial Espacial
+   ============================================================================ */
+html {
+  background-color: var(--de-bg);
+  color: var(--de-text);
+  color-scheme: dark;
+  scroll-padding-top: 5rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  background-color: var(--de-bg);
+  color: var(--de-text);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: rgba(167, 130, 255, 0.32);
+  color: #E9E7DF;
+}
+
+/* ============================================================================
+   Acessibilidade: Visually Hidden & Focus Visible (modern-web-guidance)
+   ============================================================================ */
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+:where(a:any-link, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--de-accent);
+  outline-offset: 3px;
+}
+
+/* ============================================================================
+   Validação de Formulário pós-interação (:user-invalid / :user-valid)
+   ============================================================================ */
+.de-input {
+  width: 100%;
+  min-height: 48px;
+  font-size: 1rem;
+  border-radius: var(--de-radius-button);
+  background-color: rgba(11, 11, 11, 0.72);
+  border: 1px solid rgba(233, 231, 223, 0.18);
+  color: var(--de-text);
+  padding: 0.75rem 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+@media (pointer: coarse) {
+  .de-input {
+    min-height: 52px;
+  }
+}
+
+.de-input:hover {
+  border-color: rgba(182, 149, 255, 0.42);
+}
+
+.de-input:focus {
+  border-color: var(--de-accent);
+  background-color: rgba(22, 17, 36, 0.88);
+  box-shadow: 0 0 0 3px rgba(167, 130, 255, 0.16);
+}
+
+.de-input:user-invalid,
+.de-input.user-invalid-fallback {
+  border-color: #FF6B7A;
+  background-color: rgba(255, 107, 122, 0.06);
+}
+
+.de-input:user-valid,
+.de-input.user-valid-fallback {
+  border-color: rgba(167, 130, 255, 0.65);
+}
+
+.de-field-error {
+  display: none;
+  color: #FF8A96;
+  font-size: 0.8125rem;
+  margin-top: 0.375rem;
+}
+
+.de-input:user-invalid ~ .de-field-error,
+.de-input.user-invalid-fallback ~ .de-field-error,
+.de-input[aria-invalid="true"] ~ .de-field-error {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* ============================================================================
+   Atmosfera Espacial, Grids HUD e Superfícies
+   ============================================================================ */
+.de-space-backdrop {
+  background-color: #0B0B0B;
+  background-image:
+    radial-gradient(ellipse 62% 52% at 10% 8%, rgba(167, 130, 255, 0.16) 0%, rgba(22, 17, 36, 0.08) 45%, transparent 75%),
+    radial-gradient(ellipse 52% 48% at 74% 44%, rgba(167, 130, 255, 0.14) 0%, rgba(22, 17, 36, 0.28) 50%, transparent 80%),
+    radial-gradient(ellipse 48% 34% at 90% 86%, rgba(182, 149, 255, 0.15) 0%, transparent 70%);
+}
+
+.de-hud-grid {
+  background-size: 28px 28px;
+  background-image:
+    linear-gradient(to right, rgba(167, 130, 255, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(167, 130, 255, 0.065) 1px, transparent 1px);
+}
+
+.de-card-surface {
+  background: linear-gradient(145deg, rgba(28, 24, 40, 0.72) 0%, rgba(17, 15, 24, 0.86) 100%);
+  border: 1px solid rgba(233, 231, 223, 0.15);
+  border-radius: var(--de-radius-card);
+  backdrop-filter: blur(12px);
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.de-card-surface:hover {
+  border-color: rgba(167, 130, 255, 0.48);
+  box-shadow: 0 12px 36px -12px rgba(167, 130, 255, 0.18);
+}
+
+/* ============================================================================
+   Animações de Compositor (Astronauta, Ticker, Seta e Revelação Progressiva)
+   Respeita integralmente prefers-reduced-motion (modern-web-guidance: motion)
+   ============================================================================ */
+@keyframes astronautFloat {
+  0%, 100% {
+    transform: translate3d(0, 0px, 0);
+  }
+  50% {
+    transform: translate3d(0, -11px, 0);
+  }
+}
+
+@keyframes visorPulse {
+  0%, 100% {
+    opacity: 0.18;
+    transform: translate3d(0, 0px, 0);
+  }
+  50% {
+    opacity: 0.38;
+    transform: translate3d(0, -2px, 0);
+  }
+}
+
+@keyframes orbitGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(167, 130, 255, 0.45));
+  }
+  50% {
+    filter: drop-shadow(0 0 13px rgba(182, 149, 255, 0.82));
+  }
+}
+
+@keyframes hudPulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes tickerVertical {
+  0% {
+    transform: translate3d(0, 0%, 0);
+  }
+  100% {
+    transform: translate3d(0, -50%, 0);
+  }
+}
+
+@keyframes tickerHorizontal {
+  0% {
+    transform: translate3d(0%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes exploreChevron {
+  0%, 100% {
+    transform: translate3d(0, 0px, 0);
+    opacity: 0.72;
+  }
+  50% {
+    transform: translate3d(0, 5px, 0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-astronaut-float {
+    animation: astronautFloat 7.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    will-change: transform;
+  }
+
+  .animate-visor-shimmer {
+    animation: visorPulse 5.5s ease-in-out infinite;
+  }
+
+  .animate-orbit-glow {
+    animation: orbitGlow 4.5s ease-in-out infinite;
+  }
+
+  .animate-hud-pulse {
+    animation: hudPulse 3.6s ease-in-out infinite;
+  }
+
+  .animate-ticker-vertical {
+    animation: tickerVertical 38s linear infinite;
+    will-change: transform;
+  }
+
+  .animate-ticker-horizontal {
+    animation: tickerHorizontal 32s linear infinite;
+    will-change: transform;
+  }
+
+  .animate-ticker-vertical:hover,
+  .animate-ticker-horizontal:hover,
+  .ticker-paused {
+    animation-play-state: paused !important;
+  }
+
+  .animate-explore-chevron {
+    animation: exploreChevron 2.6s ease-in-out infinite;
+  }
+
+  .de-reveal-ready {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0);
+    transition:
+      opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .de-reveal-ready.de-reveal-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
