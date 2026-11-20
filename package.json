@@ -6,8 +6,13 @@
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
+    "dev:staging": "tsx scripts/dev-staging.ts dev",
+    "build:staging": "tsx scripts/dev-staging.ts build",
+    "start:staging": "tsx scripts/dev-staging.ts start",
     "dev:cloud": "tsx scripts/run-with-mode.ts supabase dev",
     "dev:xampp": "tsx scripts/run-with-mode.ts xampp-test dev",
+    "staging:seed": "tsx scripts/staging-seed.ts",
+    "staging:seed:status": "tsx scripts/staging-seed-status.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -36,13 +36,28 @@ export function isXamppTestMode(): boolean {
 
 export const BACKEND_COOKIES = {
   supabaseActiveTenant: "devessent_active_tenant",
+  supabaseStagingActiveTenant: "devessent_staging_active_tenant",
   xamppSession: "devessent_xampp_session",
   xamppActiveTenant: "devessent_xampp_active_tenant",
 } as const;
 
 export function getActiveTenantCookieName(): string {
-  return isXamppTestMode()
-    ? BACKEND_COOKIES.xamppActiveTenant
-    : BACKEND_COOKIES.supabaseActiveTenant;
+  if (isXamppTestMode()) {
+    return BACKEND_COOKIES.xamppActiveTenant;
+  }
+  if (process.env.NEXT_PUBLIC_APP_ENV === "staging") {
+    return BACKEND_COOKIES.supabaseStagingActiveTenant;
+  }
+  return BACKEND_COOKIES.supabaseActiveTenant;
+}
+
+export function getBackendCookiePrefix(): string {
+  if (isXamppTestMode()) {
+    return "devessent_xampp";
+  }
+  if (process.env.NEXT_PUBLIC_APP_ENV === "staging") {
+    return "devessent_staging";
+  }
+  return "devessent";
 }
 

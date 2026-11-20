@@ -1,9 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { getBackendCookiePrefix } from "@/lib/environment/backend-mode";
 
 export function getStoreCartCookieName(storeSlug: string): string {
   const safeSlug = storeSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "");
-  return `devessent_cart_${safeSlug}`;
+  return `${getBackendCookiePrefix()}_cart_${safeSlug}`;
 }
 
 export function generateOpaqueToken(bytes = 24): string {
@@ -60,7 +61,7 @@ export async function clearStoreCartToken(storeSlug: string): Promise<void> {
 export function getStoreOrderReceiptCookieName(storeSlug: string, orderNumber: string): string {
   const safeSlug = storeSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "");
   const safeOrder = orderNumber.toUpperCase().replace(/[^A-Z0-9-_]/g, "");
-  return `devessent_receipt_${safeSlug}_${safeOrder}`;
+  return `${getBackendCookiePrefix()}_receipt_${safeSlug}_${safeOrder}`;
 }
 
 export async function writeStoreOrderReceiptToken(

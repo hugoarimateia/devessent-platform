@@ -36,6 +36,13 @@ if (previousMode && previousMode !== mode && fs.existsSync(nextCacheDir)) {
   }
 }
 
+try {
+  fs.mkdirSync(nextCacheDir, { recursive: true });
+  fs.writeFileSync(modeMarkerPath, mode, "utf-8");
+} catch {
+  // ignora
+}
+
 console.log(`🚀 Iniciando DevEssent Platform no modo: ${mode.toUpperCase()} (${command})`);
 
 const nextBin = require.resolve("next/dist/bin/next");

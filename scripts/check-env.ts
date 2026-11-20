@@ -23,8 +23,9 @@ function loadEnvFile(filePath: string) {
   }
 }
 
-// Carregar .env.local se existir
-const envLocalPath = path.resolve(process.cwd(), ".env.local");
+// Carregar arquivo de ambiente alvo (padrão: .env.local; configurável via DEVESSENT_ENV_FILE)
+const targetEnvFile = process.env.DEVESSENT_ENV_FILE || ".env.local";
+const envLocalPath = path.resolve(process.cwd(), targetEnvFile);
 loadEnvFile(envLocalPath);
 
 const envSchema = z.object({

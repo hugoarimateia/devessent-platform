@@ -92,6 +92,17 @@ function mapOrderRow(row: OrderRow, itemCount?: number): RetailOrder {
   };
 }
 
+function resolveOrderItemImageUrl(rawPath: string | null): string | null {
+  if (!rawPath) return null;
+  if (rawPath.startsWith("http://") || rawPath.startsWith("https://") || rawPath.startsWith("/")) {
+    return rawPath;
+  }
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
+  if (!baseUrl) return rawPath;
+  const cleanPath = rawPath.replace(/^\/+/, "");
+  return `${baseUrl}/storage/v1/object/public/retail-media/${cleanPath}`;
+}
+
 function mapOrderItemRow(row: OrderItemRow): RetailOrderItem {
   return {
     id: row.id,
@@ -105,7 +116,7 @@ function mapOrderItemRow(row: OrderItemRow): RetailOrderItem {
     unitPriceCents: row.unit_price_cents,
     quantity: row.quantity,
     lineTotalCents: row.line_total_cents,
-    imageUrlSnapshot: row.image_url_snapshot,
+    imageUrlSnapshot: resolveOrderItemImageUrl(row.image_url_snapshot),
     createdAt: row.created_at,
   };
 }
