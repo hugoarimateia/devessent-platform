@@ -1,0 +1,38 @@
+# DevEssent Landing Page — Configuração Supabase Isolada (Marketing)
+# Este escopo é estritamente separado do supabase/ da DevEssent Platform.
+# NUNCA misturar migrations da Platform com migrations da Landing.
+
+project_id = "devessent-landing-marketing"
+
+[api]
+enabled = true
+port = 54421
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 100
+
+[db]
+port = 54422
+shadow_port = 54420
+major_version = 15
+
+[auth]
+# A landing institucional não requer autenticação de visitantes
+enabled = false
+
+[realtime]
+enabled = false
+
+[storage]
+enabled = false
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+enabled = true
+
+[functions.marketing-contact]
+# Função pública para captação de leads com proteção Turnstile + validação + rate-limit.
+# Não depende de JWT de Supabase Auth; toda validação e escrita ocorrem server-side.
+verify_jwt = false
