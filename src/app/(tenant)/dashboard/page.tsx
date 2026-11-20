@@ -1,33 +1,30 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import {
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
 import { AuditService, type AuditLogViewItem } from "@/core/audit";
 import {
-  TenantService,
   MembershipService,
   InvitationService,
   type TenantMemberItem,
   type TenantInvitationItem,
 } from "@/core/tenants";
 import { hasPermission } from "@/core/permissions/policies/role-matrix";
-import { TenantSuspendedError } from "@/core/errors/app-error";
-import {
-  RetailStoreService,
-  RetailProductService,
-  RetailOrderService,
-  RetailPermissionService,
-  type RetailStore,
-  type RetailDashboardSummary,
-  type RetailOrderStats,
-} from "@/modules/retail";
-import { AppShell } from "@/components/layout/app-shell";
+import { RetailProductService } from "@/modules/retail/services/retail-product-service";
+import { RetailOrderService } from "@/modules/retail/services/retail-order-service";
+import { RetailPermissionService } from "@/modules/retail/permissions/retail-permissions";
+import type {
+  RetailDashboardSummary,
+  RetailOrderStats,
+} from "@/modules/retail/types/retail.types";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { DataTable } from "@/components/ui/data-table";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
 import { QuickTenantSwitcher } from "@/components/dashboard/quick-tenant-switcher";
 import { DashboardBanner } from "@/components/dashboard/dashboard-banner";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -82,110 +79,148 @@ function getAuditCategoryIcon(category: AuditLogViewItem["actionCategory"]) {
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
 
-  if (!sessionUser) {
+  // 1 único roundtrip paralelo: bootstrap consolidado do workspace + leituras protegidas por RLS
+  const [
+    workspace,
+    prefetchedMembers,
+    prefetchedInvitations,
+    prefetchedSummary,
+    prefetchedOrderStats,
+    prefetchedAudits,
+  ] = await Promise.all([
+    resolveWorkspaceSession(),
+    speculativeCtx
+      ? MembershipService.listMembers(supabase, speculativeCtx).catch(() => null)
+      : Promise.resolve(null),
+    speculativeCtx
+      ? InvitationService.listInvitations(supabase, speculativeCtx).catch(() => null)
+      : Promise.resolve(null),
+    hintTenantId
+      ? RetailProductService.getDashboardSummary(supabase, hintTenantId).catch(
+          () => null
+        )
+      : Promise.resolve(null),
+    speculativeCtx
+      ? RetailOrderService.getOrderStats(supabase, speculativeCtx).catch(() => null)
+      : Promise.resolve(null),
+    speculativeCtx
+      ? AuditService.listTenantAuditLogs(
+          supabase,
+          "",
+          speculativeCtx.tenantId,
+          { period: "all", page: 1, pageSize: 5 },
+          speculativeCtx
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  if (!workspace.sessionUser) {
     redirect("/login");
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  let activeContext: Awaited<
-    ReturnType<typeof TenantService.resolveTenantContext>
-  > | null = null;
-  let tenantSettings: Awaited<ReturnType<typeof TenantService.getSettings>> | null = null;
+  const {
+    sessionUser,
+    userTenants,
+    selectedTenant,
+    activeContext,
+    activeTenantSettings: tenantSettings,
+    activeRetailStore: retailStore,
+  } = workspace;
+
   let members: TenantMemberItem[] = [];
   let invitations: TenantInvitationItem[] = [];
   let recentAudits: AuditLogViewItem[] = [];
-  let retailStore: RetailStore | null = null;
   let retailSummary: RetailDashboardSummary | null = null;
   let orderStats: RetailOrderStats | null = null;
-  let isSuspended = false;
 
-  if (selectedTenant) {
-    try {
-      activeContext = await TenantService.resolveTenantContext(
-        supabase,
-        sessionUser.id,
-        selectedTenant.tenantId
-      );
+  if (activeContext) {
+    const canManageInvitations =
+      activeContext.role === "owner" ||
+      activeContext.role === "manager" ||
+      activeContext.role === "platform_admin";
+    const canViewAudit = hasPermission(activeContext.role, "view_tenant_audit_logs");
+    const canFetchOrders = RetailPermissionService.hasPermission(
+      activeContext.role,
+      "view_retail_orders"
+    );
+    const retailActiveNow = Boolean(retailStore?.isActive);
+    const hintMatched = Boolean(
+      hintTenantId && activeContext.tenantId === hintTenantId
+    );
+    // Para manager, aplicamos o escopo restrito de ações via serviço; owner/admin veem todas as ações
+    const canReusePrefetchedAudits =
+      hintMatched &&
+      canViewAudit &&
+      prefetchedAudits !== null &&
+      (activeContext.role === "owner" || activeContext.role === "platform_admin");
 
-      const canManageInvitations =
-        activeContext.role === "owner" ||
-        activeContext.role === "manager" ||
-        activeContext.role === "platform_admin";
-      const canViewAudit = hasPermission(activeContext.role, "view_tenant_audit_logs");
-
-      const [settingsRes, membersRes, invitationsRes, auditsRes, storeRes] =
-        await Promise.all([
-          TenantService.getSettings(supabase, activeContext).catch(() => null),
-          MembershipService.listMembers(supabase, activeContext).catch(() => []),
-          canManageInvitations
-            ? InvitationService.listInvitations(supabase, activeContext).catch(() => [])
-            : Promise.resolve([]),
-          canViewAudit
-            ? AuditService.listTenantAuditLogs(
+    const [membersRes, invitationsRes, auditsRes, summaryRes, orderStatsRes] =
+      await Promise.all([
+        hintMatched && prefetchedMembers !== null
+          ? Promise.resolve(prefetchedMembers)
+          : MembershipService.listMembers(supabase, activeContext).catch(() => []),
+        canManageInvitations
+          ? hintMatched && prefetchedInvitations !== null
+            ? Promise.resolve(prefetchedInvitations)
+            : InvitationService.listInvitations(supabase, activeContext).catch(
+                () => []
+              )
+          : Promise.resolve([]),
+        canViewAudit
+          ? canReusePrefetchedAudits
+            ? Promise.resolve(prefetchedAudits!)
+            : AuditService.listTenantAuditLogs(
                 supabase,
                 sessionUser.id,
                 activeContext.tenantId,
-                { period: "all", page: 1, pageSize: 5 }
+                { period: "all", page: 1, pageSize: 5 },
+                activeContext
               ).catch(() => ({
                 items: [] as AuditLogViewItem[],
                 totalCount: 0,
                 page: 1,
                 pageSize: 5,
               }))
-            : Promise.resolve({
-                items: [] as AuditLogViewItem[],
-                totalCount: 0,
-                page: 1,
-                pageSize: 5,
-              }),
-          RetailStoreService.getStore(supabase, activeContext.tenantId).catch(() => null),
-        ]);
+          : Promise.resolve({
+              items: [] as AuditLogViewItem[],
+              totalCount: 0,
+              page: 1,
+              pageSize: 5,
+            }),
+        retailActiveNow
+          ? hintMatched && prefetchedSummary !== null
+            ? Promise.resolve(prefetchedSummary)
+            : RetailProductService.getDashboardSummary(
+                supabase,
+                activeContext.tenantId
+              ).catch(() => null)
+          : Promise.resolve(null),
+        retailActiveNow && canFetchOrders
+          ? hintMatched && prefetchedOrderStats !== null
+            ? Promise.resolve(prefetchedOrderStats)
+            : RetailOrderService.getOrderStats(supabase, activeContext).catch(
+                () => null
+              )
+          : Promise.resolve(null),
+      ]);
 
-      tenantSettings = settingsRes;
-      members = membersRes;
-      invitations = invitationsRes;
-      recentAudits = auditsRes.items;
-      retailStore = storeRes;
-
-      if (retailStore?.isActive) {
-        const canFetchOrders = RetailPermissionService.hasPermission(
-          activeContext.role,
-          "view_retail_orders"
-        );
-        const [summaryRes, orderStatsRes] = await Promise.all([
-          RetailProductService.getDashboardSummary(
-            supabase,
-            activeContext.tenantId
-          ).catch(() => null),
-          canFetchOrders
-            ? RetailOrderService.getOrderStats(supabase, activeContext).catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        retailSummary = summaryRes;
-        orderStats = orderStatsRes;
-      }
-    } catch (err: unknown) {
-      if (
-        err instanceof TenantSuspendedError ||
-        (err as { code?: string })?.code === "TENANT_SUSPENDED" ||
-        selectedTenant.status === "suspended"
-      ) {
-        isSuspended = true;
-      }
-    }
+    members = membersRes;
+    invitations = invitationsRes;
+    recentAudits = auditsRes.items;
+    retailSummary = summaryRes;
+    orderStats = orderStatsRes;
   }
 
   const brand = resolveTenantBrand({
@@ -381,15 +416,9 @@ export default async function DashboardPage() {
   }
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={selectedTenant?.tenantId}
-      activeRole={effectiveRole}
-    >
+    <>
       {/* CENÁRIO 1: Estabelecimento Ativo e Operacional */}
-      {activeContext && !isSuspended && (
+      {activeContext && (
         <div className="space-y-6">
           {/* A — Novo Banner Principal HORIZON Administrativo */}
           <DashboardBanner
@@ -644,6 +673,7 @@ export default async function DashboardPage() {
 
                   <Link
                     href="/dashboard/membros"
+                    prefetch={false}
                     className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline self-start sm:self-auto"
                   >
                     <span>
@@ -736,6 +766,7 @@ export default async function DashboardPage() {
                   <div className="flex items-center gap-4">
                     <Link
                       href="/dashboard/membros"
+                      prefetch={false}
                       className="font-semibold text-foreground hover:text-accent transition-colors"
                     >
                       Abrir lista de membros
@@ -743,6 +774,7 @@ export default async function DashboardPage() {
                     {canManageTeam && (
                       <Link
                         href="/dashboard/configuracoes"
+                        prefetch={false}
                         className="font-semibold text-foreground-muted hover:text-foreground transition-colors"
                       >
                         Configurações da unidade
@@ -891,6 +923,7 @@ export default async function DashboardPage() {
                     </h2>
                     <Link
                       href="/dashboard/atividades"
+                      prefetch={false}
                       className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
                     >
                       <span>Ver histórico</span>
@@ -959,6 +992,7 @@ export default async function DashboardPage() {
                   {canManageTeam && (
                     <Link
                       href="/dashboard/configuracoes"
+                      prefetch={false}
                       className="text-xs font-semibold text-accent hover:underline"
                     >
                       Editar
@@ -1002,29 +1036,6 @@ export default async function DashboardPage() {
               </section>
             </aside>
           </div>
-        </div>
-      )}
-
-      {/* CENÁRIO 2: Estabelecimento Suspenso */}
-      {isSuspended && (
-        <div className="space-y-6">
-          <header className="pb-5 border-b border-surface-border">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-foreground-muted">
-              Conta autenticada · {sessionUser.email}
-            </p>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground mt-1">
-              Olá, {sessionUser.fullName}
-            </h1>
-          </header>
-
-          <SuspendedTenantState tenantName={selectedTenant?.name} />
-
-          {userTenants.length > 1 && selectedTenant && (
-            <QuickTenantSwitcher
-              tenants={userTenants}
-              activeTenantId={selectedTenant.tenantId}
-            />
-          )}
         </div>
       )}
 
@@ -1163,12 +1174,14 @@ export default async function DashboardPage() {
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               <Link
                 href="/admin/sites"
+                prefetch={false}
                 className="inline-flex items-center justify-center gap-2 min-h-[42px] px-4 rounded-xl border border-white/15 bg-white/10 text-white text-xs font-semibold hover:bg-white/15 transition-colors"
               >
                 <span>Customização de Sites</span>
               </Link>
               <Link
                 href="/admin"
+                prefetch={false}
                 className="inline-flex items-center justify-center gap-2 min-h-[42px] px-4 rounded-xl bg-accent text-white text-xs font-semibold hover:bg-accent-secondary transition-colors"
               >
                 <span>Acessar Console Global</span>
@@ -1178,6 +1191,6 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

@@ -1,21 +1,18 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService } from "@/core/tenants";
-import { TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import {
-  RetailStoreService,
-  RetailProductService,
-  RetailOrderService,
-  RetailPermissionService,
-  RetailDashboard,
-  RetailModuleInactive,
-} from "@/modules/retail";
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { RetailStoreService } from "@/modules/retail/services/retail-store-service";
+import { RetailProductService } from "@/modules/retail/services/retail-product-service";
+import { RetailOrderService } from "@/modules/retail/services/retail-order-service";
+import { RetailPermissionService } from "@/modules/retail/permissions/retail-permissions";
+import { RetailDashboard } from "@/modules/retail/components/retail-dashboard";
+import { RetailModuleInactive } from "@/modules/retail/components/retail-module-inactive";
 
 export const metadata: Metadata = {
   title: "Painel Retail | DevEssent Platform",
@@ -24,59 +21,57 @@ export const metadata: Metadata = {
 
 export default async function RetailDashboardPage() {
   const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
 
-  if (!sessionUser) {
+  const [workspace, prefetchedStats, prefetchedRecent, prefetchedOrderStats] =
+    await Promise.all([
+      resolveWorkspaceSession(),
+      hintTenantId
+        ? RetailProductService.getCatalogStats(supabase, hintTenantId).catch(
+            () => null
+          )
+        : Promise.resolve(null),
+      hintTenantId
+        ? RetailProductService.listProducts(supabase, hintTenantId, {
+            pageSize: 5,
+          }).catch(() => null)
+        : Promise.resolve(null),
+      speculativeCtx
+        ? RetailOrderService.getOrderStats(supabase, speculativeCtx).catch(
+            () => null
+          )
+        : Promise.resolve(null),
+    ]);
+
+  if (!workspace.sessionUser) {
     redirect("/login?redirect=/dashboard/retail");
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  if (!selectedTenant) {
+  const { activeContext } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole="staff"
-        >
-          <SuspendedTenantState
-            tenantName={selectedTenant.name}
-          />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
+  // Reutiliza loja já obtida no bootstrap consolidado
+  let store = workspace.activeRetailStore;
 
-  // Verifica se a loja Retail existe e está ativa
-  let store = await RetailStoreService.getStore(supabase, activeContext.tenantId);
-
-  // Se não existir loja para o tenant, tenta inicializar se for owner/manager
-  if (!store && (activeContext.role === "owner" || activeContext.role === "manager" || activeContext.role === "platform_admin")) {
+  // Se não existir loja para o tenant, tenta inicializar se for owner/manager/platform_admin
+  if (
+    !store &&
+    (activeContext.role === "owner" ||
+      activeContext.role === "manager" ||
+      activeContext.role === "platform_admin")
+  ) {
     store = await RetailStoreService.ensureStore(
       supabase,
       activeContext.tenantId,
@@ -86,19 +81,11 @@ export default async function RetailDashboardPage() {
 
   if (!store || !store.isActive) {
     return (
-      <AppShell
-        user={sessionUser}
-        contextMode="tenant"
-        tenants={userTenants}
-        activeTenantId={activeContext.tenantId}
-        activeRole={activeContext.role}
-      >
-        <RetailModuleInactive
-          tenantId={activeContext.tenantId}
-          tenantName={activeContext.tenantName}
-          userRole={activeContext.role}
-        />
-      </AppShell>
+      <RetailModuleInactive
+        tenantId={activeContext.tenantId}
+        tenantName={activeContext.tenantName}
+        userRole={activeContext.role}
+      />
     );
   }
 
@@ -106,34 +93,36 @@ export default async function RetailDashboardPage() {
     activeContext.role,
     "view_retail_orders"
   );
+  const hintMatched = Boolean(
+    hintTenantId && activeContext.tenantId === hintTenantId
+  );
 
   const [stats, recentResult, orderStats] = await Promise.all([
-    RetailProductService.getCatalogStats(supabase, activeContext.tenantId),
-    RetailProductService.listProducts(supabase, activeContext.tenantId, {
-      pageSize: 5,
-    }),
+    hintMatched && prefetchedStats !== null
+      ? Promise.resolve(prefetchedStats)
+      : RetailProductService.getCatalogStats(supabase, activeContext.tenantId),
+    hintMatched && prefetchedRecent !== null
+      ? Promise.resolve(prefetchedRecent)
+      : RetailProductService.listProducts(supabase, activeContext.tenantId, {
+          pageSize: 5,
+        }),
     canViewOrders
-      ? RetailOrderService.getOrderStats(supabase, activeContext).catch(() => null)
+      ? hintMatched && prefetchedOrderStats !== null
+        ? Promise.resolve(prefetchedOrderStats)
+        : RetailOrderService.getOrderStats(supabase, activeContext).catch(
+            () => null
+          )
       : Promise.resolve(null),
   ]);
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
-      <RetailDashboard
-        tenantSlug={activeContext.slug}
-        store={store}
-        stats={stats}
-        orderStats={orderStats}
-        recentProducts={recentResult.products}
-        userRole={activeContext.role}
-      />
-    </AppShell>
+    <RetailDashboard
+      tenantSlug={activeContext.slug}
+      store={store}
+      stats={stats}
+      orderStats={orderStats}
+      recentProducts={recentResult.products}
+      userRole={activeContext.role}
+    />
   );
 }
-

@@ -1,14 +1,17 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { AppShell } from "@/components/layout/app-shell";
+import { resolveSessionUserCached } from "@/lib/workspace/workspace-context";
 
+/**
+ * Layout persistente da Administração Global (/admin/**).
+ * Mantém <AppShell contextMode="platform"> montado durante transições internas.
+ */
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const sessionUser = await resolveSessionUserCached();
 
   if (!sessionUser) {
     redirect("/login?redirect=/admin");
@@ -19,6 +22,9 @@ export default async function AdminLayout({
     redirect("/forbidden");
   }
 
-  return <>{children}</>;
+  return (
+    <AppShell user={sessionUser} contextMode="platform">
+      {children}
+    </AppShell>
+  );
 }
-

@@ -15,7 +15,10 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import { RetailPermissionService } from "../permissions/retail-permissions";
-import { PaymentInvariants } from "../domain/payment-invariants";
+import {
+  computeStatsFromPayments,
+  PaymentInvariants,
+} from "../domain/payment-invariants";
 import {
   connectPaymentAccountSchema,
   initiatePaymentSessionSchema,
@@ -53,10 +56,13 @@ import type {
   RetailPaymentsListResult,
 } from "../types/retail.types";
 import { RetailOrderService } from "./retail-order-service";
-import {
-  computeStatsFromPayments,
-  XamppRetailPaymentAdapter,
-} from "@/infrastructure/xampp-test/retail-payment-adapter";
+
+async function loadXamppRetailPaymentAdapter() {
+  const { XamppRetailPaymentAdapter } = await import(
+    "@/infrastructure/xampp-test/retail-payment-adapter"
+  );
+  return XamppRetailPaymentAdapter;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AppSupabaseClient = SupabaseClient<Database, any, any>;
@@ -255,6 +261,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.getConnectionSummary(params.context);
     }
 
@@ -325,6 +332,7 @@ export class RetailPaymentService {
     PaymentInvariants.assertSandboxOnlyMode(parsed.environment, parsed.webhookSecret);
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const summary = await XamppRetailPaymentAdapter.connectSellerAccount({
         actorUserId: params.actorUserId,
         actorRole: params.actorRole,
@@ -449,6 +457,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       await XamppRetailPaymentAdapter.disconnectSellerAccount({
         actorUserId: params.actorUserId,
         actorRole: params.actorRole,
@@ -511,6 +520,7 @@ export class RetailPaymentService {
     const parsed = setOrderShippingFeeSchema.parse(params.rawInput);
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const updated = await XamppRetailPaymentAdapter.setOrderShippingFee({
         context: params.context,
         orderId: parsed.orderId,
@@ -601,6 +611,7 @@ export class RetailPaymentService {
     const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       await XamppRetailPaymentAdapter.saveOrderPaymentShareToken({
         context: params.context,
         orderId: order.id,
@@ -680,6 +691,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.getPublicPaymentShareView({
         storeSlug: params.storeSlug,
         shareToken: cleanToken,
@@ -1168,6 +1180,7 @@ export class RetailPaymentService {
         throw new NotFoundError("Pedido comercial não localizado.");
       }
 
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const secrets = await XamppRetailPaymentAdapter.getDecryptedConnectionSecrets(
         params.tenantId
       );
@@ -1500,6 +1513,7 @@ export class RetailPaymentService {
         throw new NotFoundError("Transação correspondente ao webhook não localizada.");
       }
 
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const secrets = await XamppRetailPaymentAdapter.getDecryptedConnectionSecrets(
         targetPayment.tenant_id
       );
@@ -1721,6 +1735,7 @@ export class RetailPaymentService {
         throw new NotFoundError("Sessão de pagamento não encontrada para simulação.");
       }
 
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const secrets = await XamppRetailPaymentAdapter.getDecryptedConnectionSecrets(
         params.tenantId
       );
@@ -1868,6 +1883,7 @@ export class RetailPaymentService {
     const extPayId = params.externalPaymentId?.trim() || current.externalPaymentId;
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const secrets = await XamppRetailPaymentAdapter.getDecryptedConnectionSecrets(
         params.context.tenantId
       );
@@ -1994,6 +2010,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       await XamppRetailPaymentAdapter.reconcilePaymentTx({
         tenantId: params.context.tenantId,
         paymentId: current.id,
@@ -2110,6 +2127,7 @@ export class RetailPaymentService {
       params.idempotencyKey ?? `refund_${current.id}_${refundAmountCents}_${Date.now()}`;
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       const secrets = await XamppRetailPaymentAdapter.getDecryptedConnectionSecrets(
         params.context.tenantId
       );
@@ -2239,6 +2257,7 @@ export class RetailPaymentService {
     const filters = params.filters ?? {};
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.listPayments(params.context, filters);
     }
 
@@ -2323,6 +2342,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.getPaymentWithDetails(
         params.context,
         params.paymentId
@@ -2384,6 +2404,7 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.getPaymentByOrderId(
         params.context,
         params.orderId
@@ -2418,12 +2439,15 @@ export class RetailPaymentService {
     }
 
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailPaymentAdapter = await loadXamppRetailPaymentAdapter();
       return XamppRetailPaymentAdapter.getPaymentStats(params.context);
     }
 
     const { data: rows, error } = await params.supabase
       .from("retail_payments")
-      .select("*")
+      .select(
+        "status, amount_cents, refunded_amount_cents, divergence_alert, approved_at, created_at"
+      )
       .eq("tenant_id", params.context.tenantId)
       .order("created_at", { ascending: true })
       .limit(500);
@@ -2434,7 +2458,16 @@ export class RetailPaymentService {
       );
     }
 
-    return computeStatsFromPayments((rows ?? []).map((r) => mapPaymentRow(r)));
+    return computeStatsFromPayments(
+      (rows ?? []).map((r) => ({
+        status: r.status as RetailPaymentStatus,
+        amountCents: r.amount_cents,
+        refundedAmountCents: r.refunded_amount_cents,
+        divergenceAlert: r.divergence_alert,
+        approvedAt: r.approved_at,
+        createdAt: r.created_at,
+      }))
+    );
   }
 
   /**

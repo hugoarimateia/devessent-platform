@@ -5,9 +5,46 @@ import type { SessionUser } from "../types/auth.types";
 import { UnauthorizedError } from "@/core/errors/app-error";
 import { env } from "@/lib/environment/env";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import {
+  MW_AUTH_BRIDGE_HEADER,
+  verifyMiddlewareAuthBridgeHeader,
+  type VerifiedMiddlewareAuthUser,
+} from "@/lib/supabase/auth-bridge";
+import { logPerfSpan, perfNow } from "@/lib/perf/perf-trace";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AppSupabaseClient = SupabaseClient<Database, any, any>;
+
+function getExpectedCookiePrefix(): string {
+  try {
+    const hostname = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+    const ref = hostname.split(".")[0];
+    if (ref && /^[a-z0-9-]+$/i.test(ref)) {
+      return `sb-${ref}-`;
+    }
+  } catch {
+    // fallback seguro
+  }
+  return "sb-";
+}
+
+async function tryReadVerifiedMiddlewareUser(): Promise<VerifiedMiddlewareAuthUser | null> {
+  try {
+    const { headers, cookies } = await import("next/headers");
+    const [hdrs, cookieStore] = await Promise.all([headers(), cookies()]);
+    const bridgeHeader = hdrs.get(MW_AUTH_BRIDGE_HEADER);
+    if (!bridgeHeader) return null;
+
+    return verifyMiddlewareAuthBridgeHeader({
+      headerValue: bridgeHeader,
+      cookiesList: cookieStore.getAll(),
+      cookiePrefix: getExpectedCookiePrefix(),
+    });
+  } catch {
+    // Fora de contexto de requisição Next.js (testes unitários/integração) -> fallback padrão
+    return null;
+  }
+}
 
 export class AuthService {
   /**
@@ -133,8 +170,48 @@ export class AuthService {
   }
 
   /**
+   * Resolve a identidade GoTrue verificada da requisição atual:
+   * - Em requisições vindas do Middleware SSR, reutiliza a verificação autoritativa já executada
+   *   via ponte HMAC-SHA256 vinculada aos cookies da requisição (evitando 2º roundtrip HTTP).
+   * - Em Server Actions, testes ou chamadas diretas sem ponte válida, executa `supabase.auth.getUser()`.
+   */
+  public static resolveVerifiedAuthUser = cache(async (
+    supabase: AppSupabaseClient
+  ): Promise<VerifiedMiddlewareAuthUser | null> => {
+    const t0 = perfNow();
+    const bridged = await tryReadVerifiedMiddlewareUser();
+    if (bridged) {
+      logPerfSpan("auth", "resolveVerifiedAuthUser.bridgeHit", perfNow() - t0);
+      return bridged;
+    }
+
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    logPerfSpan("auth", "resolveVerifiedAuthUser.goTrueRtt", perfNow() - t0, {
+      ok: Boolean(!userErr && user),
+    });
+
+    if (userErr || !user) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      email: user.email || "",
+      fullName:
+        typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name
+          : null,
+      createdAt: user.created_at,
+    };
+  });
+
+  /**
    * Resolução da identidade autenticada com perfil e checagem de privilégios.
-   * Utiliza getUser() para validação autoritativa junto ao serviço de autenticação.
+   * Utiliza validação autoritativa junto ao GoTrue (com deduplicação segura Middleware -> RSC).
    * Memoizado por requisição via React.cache para eliminar roundtrips repetidos.
    */
   public static getSessionUser = cache(async (
@@ -146,15 +223,12 @@ export class AuthService {
     }
 
     try {
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-
-      if (userErr || !user) {
+      const user = await this.resolveVerifiedAuthUser(supabase);
+      if (!user) {
         return null;
       }
 
+      const tDb = perfNow();
       // Buscar perfil do usuário e checagem de platform admin em paralelo
       const [profileRes, adminRes] = await Promise.all([
         supabase
@@ -168,6 +242,7 @@ export class AuthService {
           .eq("user_id", user.id)
           .maybeSingle(),
       ]);
+      logPerfSpan("auth", "getSessionUser.profileAndAdmin", perfNow() - tDb);
 
       const profile = profileRes.data;
       const adminRecord = adminRes.data;
@@ -175,15 +250,13 @@ export class AuthService {
 
       return {
         id: user.id,
-        email: user.email || "",
+        email: user.email,
         fullName:
           typeof profile?.full_name === "string"
             ? profile.full_name
-            : typeof user.user_metadata?.full_name === "string"
-              ? user.user_metadata.full_name
-              : "Usuário",
+            : user.fullName || "Usuário",
         avatarPath: typeof profile?.avatar_path === "string" ? profile.avatar_path : null,
-        createdAt: typeof profile?.created_at === "string" ? profile.created_at : user.created_at,
+        createdAt: typeof profile?.created_at === "string" ? profile.created_at : user.createdAt,
         isPlatformAdmin,
       };
     } catch (err) {

@@ -1,20 +1,16 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService } from "@/core/tenants";
-import { TenantSuspendedError, NotFoundError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import {
-  RetailStoreService,
-  RetailProductService,
-  RetailCategoryService,
-  RetailProductForm,
-  RetailModuleInactive,
-} from "@/modules/retail";
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { NotFoundError } from "@/core/errors/app-error";
+import { RetailProductService } from "@/modules/retail/services/retail-product-service";
+import { RetailCategoryService } from "@/modules/retail/services/retail-category-service";
+import { RetailProductForm } from "@/modules/retail/components/retail-product-form";
+import { RetailModuleInactive } from "@/modules/retail/components/retail-module-inactive";
 
 export const metadata: Metadata = {
   title: "Editar Produto | DevEssent Retail",
@@ -27,112 +23,101 @@ interface ProdutoDetalhePageProps {
   }>;
 }
 
-export default async function ProdutoDetalhePage({ params }: ProdutoDetalhePageProps) {
-  const { id: productId } = await params;
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+export default async function ProdutoDetalhePage({
+  params,
+}: ProdutoDetalhePageProps) {
+  const [{ id: productId }, supabase] = await Promise.all([
+    params,
+    createClient(),
+  ]);
 
-  if (!sessionUser) {
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+
+  const [workspace, prefetchedProduct, prefetchedCategories] =
+    await Promise.all([
+      resolveWorkspaceSession(),
+      hintTenantId
+        ? RetailProductService.getProductById(
+            supabase,
+            hintTenantId,
+            productId
+          ).catch(() => null)
+        : Promise.resolve(null),
+      hintTenantId
+        ? RetailCategoryService.listCategories(supabase, hintTenantId, true).catch(
+            () => null
+          )
+        : Promise.resolve(null),
+    ]);
+
+  if (!workspace.sessionUser) {
     redirect(`/login?redirect=/dashboard/retail/produtos/${productId}`);
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  if (!selectedTenant) {
+  const { activeContext, activeRetailStore: store } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole="staff"
-        >
-          <SuspendedTenantState
-            tenantName={selectedTenant.name}
-          />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
-
-  const store = await RetailStoreService.getStore(supabase, activeContext.tenantId);
   if (!store || !store.isActive) {
     return (
-      <AppShell
-        user={sessionUser}
-        contextMode="tenant"
-        tenants={userTenants}
-        activeTenantId={activeContext.tenantId}
-        activeRole={activeContext.role}
-      >
-        <RetailModuleInactive
-          tenantId={activeContext.tenantId}
-          tenantName={activeContext.tenantName}
-          userRole={activeContext.role}
-        />
-      </AppShell>
-    );
-  }
-
-  let product;
-  try {
-    product = await RetailProductService.getProductById(
-      supabase,
-      activeContext.tenantId,
-      productId
-    );
-  } catch (err) {
-    if (err instanceof NotFoundError) {
-      notFound();
-    }
-    throw err;
-  }
-
-  const categories = await RetailCategoryService.listCategories(
-    supabase,
-    activeContext.tenantId,
-    true
-  );
-
-  return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
-      <RetailProductForm
+      <RetailModuleInactive
         tenantId={activeContext.tenantId}
-        currency={store.currency}
-        categories={categories}
-        initialProduct={product}
+        tenantName={activeContext.tenantName}
         userRole={activeContext.role}
       />
-    </AppShell>
+    );
+  }
+
+  const hintMatched = Boolean(
+    hintTenantId && activeContext.tenantId === hintTenantId
+  );
+
+  let product = hintMatched ? prefetchedProduct : null;
+  let categories = hintMatched ? prefetchedCategories : null;
+
+  if (!product || !categories) {
+    try {
+      const [fetchedProduct, fetchedCategories] = await Promise.all([
+        product
+          ? Promise.resolve(product)
+          : RetailProductService.getProductById(
+              supabase,
+              activeContext.tenantId,
+              productId
+            ),
+        categories
+          ? Promise.resolve(categories)
+          : RetailCategoryService.listCategories(
+              supabase,
+              activeContext.tenantId,
+              true
+            ),
+      ]);
+      product = fetchedProduct;
+      categories = fetchedCategories;
+    } catch (err) {
+      if (err instanceof NotFoundError) {
+        notFound();
+      }
+      throw err;
+    }
+  }
+
+  return (
+    <RetailProductForm
+      tenantId={activeContext.tenantId}
+      currency={store.currency}
+      categories={categories}
+      initialProduct={product}
+      userRole={activeContext.role}
+    />
   );
 }
-

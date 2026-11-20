@@ -12,7 +12,6 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/core/errors/app-error";
-import { XamppRetailOrderAdapter } from "@/infrastructure/xampp-test/retail-order-adapter";
 import { OrderInvariants } from "../domain/order-invariants";
 import { RetailPermissionService } from "../permissions/retail-permissions";
 import {
@@ -41,6 +40,13 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AppSupabaseClient = SupabaseClient<Database, any, any>;
+
+async function loadXamppRetailOrderAdapter() {
+  const { XamppRetailOrderAdapter } = await import(
+    "@/infrastructure/xampp-test/retail-order-adapter"
+  );
+  return XamppRetailOrderAdapter;
+}
 type OrderRow = Database["public"]["Tables"]["retail_orders"]["Row"];
 type OrderItemRow = Database["public"]["Tables"]["retail_order_items"]["Row"];
 type OrderHistoryRow = Database["public"]["Tables"]["retail_order_status_history"]["Row"];
@@ -222,7 +228,8 @@ export class RetailOrderService {
     await RateLimitService.assertNotBlocked(RATE_LIMIT_POLICIES.retailOrderCheckout, limiterId);
     await RateLimitService.consumeOrThrow(RATE_LIMIT_POLICIES.retailOrderCheckout, limiterId);
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       const res = await XamppRetailOrderAdapter.createPublicOrder({
         storeSlug: params.storeSlug,
         rawCartToken: rawToken,
@@ -330,7 +337,8 @@ export class RetailOrderService {
       return null;
     }
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       return XamppRetailOrderAdapter.getPublicOrderTracking(params);
     }
 
@@ -409,7 +417,8 @@ export class RetailOrderService {
   ): Promise<RetailOrdersListResult> {
     RetailPermissionService.assertPermission(context.role, "view_retail_orders");
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       return XamppRetailOrderAdapter.listOrders(context, filter);
     }
 
@@ -420,7 +429,7 @@ export class RetailOrderService {
 
     let query = supabase
       .from("retail_orders")
-      .select("*", { count: "exact" })
+      .select("*, retail_order_items(quantity)", { count: "exact" })
       .eq("tenant_id", context.tenantId)
       .order("created_at", { ascending: false })
       .range(from, to);
@@ -441,25 +450,19 @@ export class RetailOrderService {
       throw new Error("Não foi possível consultar a lista de pedidos.");
     }
 
-    const rows = data || [];
-    const orderIds = rows.map((r) => r.id);
-    const itemCountMap = new Map<string, number>();
-
-    if (orderIds.length > 0) {
-      const { data: items } = await supabase
-        .from("retail_order_items")
-        .select("order_id, quantity")
-        .eq("tenant_id", context.tenantId)
-        .in("order_id", orderIds);
-
-      for (const item of items || []) {
-        itemCountMap.set(item.order_id, (itemCountMap.get(item.order_id) || 0) + item.quantity);
-      }
-    }
+    const rows = (data || []) as Array<
+      OrderRow & { retail_order_items?: Array<{ quantity: number }> | null }
+    >;
 
     const totalCount = count || 0;
     return {
-      orders: rows.map((r) => mapOrderRow(r, itemCountMap.get(r.id) || 0)),
+      orders: rows.map((r) => {
+        const itemCount = (r.retail_order_items || []).reduce(
+          (sum, item) => sum + (item.quantity || 0),
+          0
+        );
+        return mapOrderRow(r, itemCount);
+      }),
       totalCount,
       page,
       pageSize,
@@ -473,7 +476,8 @@ export class RetailOrderService {
   ): Promise<RetailOrderStats> {
     RetailPermissionService.assertPermission(context.role, "view_retail_orders");
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       return XamppRetailOrderAdapter.getOrderStats(context);
     }
 
@@ -526,7 +530,8 @@ export class RetailOrderService {
   ): Promise<RetailOrderWithDetails> {
     RetailPermissionService.assertPermission(context.role, "view_retail_orders");
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       return XamppRetailOrderAdapter.getOrderById(context, orderId);
     }
 
@@ -573,7 +578,8 @@ export class RetailOrderService {
     RetailPermissionService.assertPermission(params.context.role, "manage_retail_orders");
 
     let updated: RetailOrder;
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       updated = await XamppRetailOrderAdapter.confirmOrder(params);
     } else {
       const { data, error } = await params.supabase.rpc("confirm_retail_order", {
@@ -616,7 +622,8 @@ export class RetailOrderService {
     RetailPermissionService.assertPermission(params.context.role, "manage_retail_orders");
 
     let updated: RetailOrder;
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       updated = await XamppRetailOrderAdapter.cancelOrder(params);
     } else {
       const { data, error } = await params.supabase.rpc("cancel_retail_order", {
@@ -685,7 +692,8 @@ export class RetailOrderService {
     let updated: RetailOrder;
     let previousStatus: RetailOrderStatus;
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       const before = await XamppRetailOrderAdapter.getOrderById(params.context, params.orderId);
       previousStatus = before.status;
       updated = await XamppRetailOrderAdapter.updateOrderStatus({

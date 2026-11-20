@@ -219,6 +219,7 @@ export function RetailOrdersTable({
                   <td data-label="Pedido" className="py-3.5 px-5">
                     <Link
                       href={`/dashboard/retail/pedidos/${order.id}`}
+                      prefetch={false}
                       className="font-mono font-bold text-foreground hover:text-accent transition-colors"
                     >
                       {order.orderNumber}
@@ -272,6 +273,7 @@ export function RetailOrdersTable({
                   <td data-label="Detalhes" className="py-3.5 px-5 text-right">
                     <Link
                       href={`/dashboard/retail/pedidos/${order.id}`}
+                      prefetch={false}
                       className="inline-flex items-center gap-1 font-semibold text-accent hover:underline"
                     >
                       <span>Gerenciar</span>

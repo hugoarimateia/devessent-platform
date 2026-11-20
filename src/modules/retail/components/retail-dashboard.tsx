@@ -66,6 +66,7 @@ export function RetailDashboard({
           {canWrite && (
             <Link
               href="/dashboard/retail/pedidos"
+              prefetch={false}
               className="inline-flex items-center gap-2 min-h-[40px] px-4 rounded-xl bg-gradient-to-r from-[#6C4EF2] to-[#5638DC] dark:from-[#9F7EFF] dark:to-[#7D5CFA] text-white dark:text-[#110D22] text-xs sm:text-[13px] font-semibold shadow-sm hover:brightness-105 transition-all"
             >
               <ClipboardList className="w-4 h-4" aria-hidden="true" />
@@ -77,6 +78,7 @@ export function RetailDashboard({
           {canWrite && (
             <Link
               href="/dashboard/retail/produtos/novo"
+              prefetch={false}
               className="inline-flex items-center gap-2 min-h-[40px] px-3.5 rounded-xl text-xs sm:text-[13px] font-semibold bg-white/85 dark:bg-white/[0.08] border border-[#CFC5FA] dark:border-white/15 text-[#111022] dark:text-white hover:bg-white dark:hover:bg-white/15 transition-colors"
             >
               <Plus className="w-4 h-4 text-accent" aria-hidden="true" />
@@ -85,6 +87,7 @@ export function RetailDashboard({
           )}
           <Link
             href="/dashboard/retail/categorias"
+            prefetch={false}
             className="inline-flex items-center gap-2 min-h-[40px] px-3.5 rounded-xl text-xs sm:text-[13px] font-semibold bg-white/85 dark:bg-white/[0.08] border border-[#CFC5FA] dark:border-white/15 text-[#111022] dark:text-white hover:bg-white dark:hover:bg-white/15 transition-colors"
           >
             <Tag className="w-4 h-4 text-accent" aria-hidden="true" />
@@ -104,6 +107,7 @@ export function RetailDashboard({
           {canWrite && (
             <Link
               href="/dashboard/retail/configuracoes"
+              prefetch={false}
               className="inline-flex items-center gap-2 min-h-[40px] px-3.5 rounded-xl text-xs sm:text-[13px] font-semibold bg-white/85 dark:bg-white/[0.08] border border-[#CFC5FA] dark:border-white/15 text-[#111022] dark:text-white hover:bg-white dark:hover:bg-white/15 transition-colors"
               title="Configurações Operacionais da Loja"
             >
@@ -172,6 +176,7 @@ export function RetailDashboard({
           </div>
           <Link
             href="/dashboard/retail/produtos"
+            prefetch={false}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline"
           >
             <span>Ver todo o catálogo</span>
@@ -227,6 +232,7 @@ export function RetailDashboard({
                         <div className="min-w-0">
                           <Link
                             href={`/dashboard/retail/produtos/${p.id}`}
+                            prefetch={false}
                             className="font-semibold text-foreground hover:text-accent transition-colors block truncate"
                           >
                             {p.name}
@@ -286,6 +292,7 @@ export function RetailDashboard({
                     <td data-label="Ação" className="py-3.5 px-5 text-right">
                       <Link
                         href={`/dashboard/retail/produtos/${p.id}`}
+                        prefetch={false}
                         className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-surface-muted hover:bg-accent/10 hover:text-accent border border-surface-border transition-colors text-foreground"
                       >
                         <span>Gerenciar</span>

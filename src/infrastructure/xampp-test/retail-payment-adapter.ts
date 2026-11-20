@@ -8,7 +8,10 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/core/errors/app-error";
-import { PaymentInvariants } from "@/modules/retail/domain/payment-invariants";
+import {
+  computeStatsFromPayments,
+  PaymentInvariants,
+} from "@/modules/retail/domain/payment-invariants";
 import { RetailPermissionService } from "@/modules/retail/permissions/retail-permissions";
 import {
   decryptPaymentSecret,
@@ -24,7 +27,6 @@ import type {
   RetailPaymentConnectionSummary,
   RetailPaymentEvent,
   RetailPaymentMethod,
-  RetailPaymentPeriodBucket,
   RetailPaymentProviderName,
   RetailPaymentStats,
   RetailPaymentStatus,
@@ -1313,68 +1315,4 @@ export class XamppRetailPaymentAdapter {
   }
 }
 
-export function computeStatsFromPayments(payments: RetailPayment[]): RetailPaymentStats {
-  let grossConfirmedCents = 0;
-  let refundedCents = 0;
-  let pendingCents = 0;
-  let rejectedOrExpiredCents = 0;
-  let paidOrdersCount = 0;
-  let pendingPaymentsCount = 0;
-  let rejectedPaymentsCount = 0;
-  let refundedPaymentsCount = 0;
-  let divergenceAlertsCount = 0;
-
-  const bucketMap = new Map<string, RetailPaymentPeriodBucket>();
-
-  for (const p of payments) {
-    if (p.divergenceAlert) divergenceAlertsCount++;
-
-    // Somente pagamentos efetivamente confirmados pelo provedor integram valores recebidos (§6)
-    if (p.status === "paid" || p.status === "partially_refunded" || p.status === "refunded") {
-      grossConfirmedCents += p.amountCents;
-      refundedCents += p.refundedAmountCents;
-      if (p.status === "paid" || p.status === "partially_refunded") {
-        paidOrdersCount++;
-      }
-      if (p.refundedAmountCents > 0 || p.status === "refunded") {
-        refundedPaymentsCount++;
-      }
-
-      const dayKey = (p.approvedAt || p.createdAt).slice(0, 10);
-      const existing = bucketMap.get(dayKey) || {
-        periodLabel: dayKey.split("-").reverse().slice(0, 2).join("/"),
-        confirmedCents: 0,
-        refundedCents: 0,
-        netConfirmedCents: 0,
-        paidCount: 0,
-      };
-      existing.confirmedCents += p.amountCents;
-      existing.refundedCents += p.refundedAmountCents;
-      existing.netConfirmedCents = Math.max(0, existing.confirmedCents - existing.refundedCents);
-      if (p.status === "paid" || p.status === "partially_refunded") {
-        existing.paidCount += 1;
-      }
-      bucketMap.set(dayKey, existing);
-    } else if (p.status === "pending" || p.status === "processing") {
-      pendingCents += p.amountCents;
-      pendingPaymentsCount++;
-    } else if (p.status === "failed" || p.status === "expired" || p.status === "cancelled") {
-      rejectedOrExpiredCents += p.amountCents;
-      rejectedPaymentsCount++;
-    }
-  }
-
-  return {
-    grossConfirmedCents,
-    netReceivedCents: Math.max(0, grossConfirmedCents - refundedCents),
-    pendingCents,
-    rejectedOrExpiredCents,
-    refundedCents,
-    paidOrdersCount,
-    pendingPaymentsCount,
-    rejectedPaymentsCount,
-    refundedPaymentsCount,
-    divergenceAlertsCount,
-    periodEvolution: Array.from(bucketMap.values()).slice(-7),
-  };
-}
+export { computeStatsFromPayments };

@@ -7,7 +7,10 @@ import {
   hasPermission,
   type RoleOrAdmin,
 } from "@/core/permissions/policies/role-matrix";
-import { TenantService } from "@/core/tenants/services/tenant-service";
+import {
+  TenantService,
+  type TenantContext,
+} from "@/core/tenants/services/tenant-service";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -732,11 +735,15 @@ export class AuditService {
     supabase: AppSupabaseClient,
     actorUserId: string,
     tenantId: string,
-    filters: ListAuditLogsFilter = {}
+    filters: ListAuditLogsFilter = {},
+    preResolvedContext?: TenantContext
   ): Promise<AuditLogListResult> {
     if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
       const { XamppTenantAdapter } = await import("@/infrastructure/xampp-test/tenant-adapter");
-      const context = await XamppTenantAdapter.resolveTenantContext(actorUserId, tenantId);
+      const context =
+        preResolvedContext && preResolvedContext.tenantId === tenantId
+          ? preResolvedContext
+          : await XamppTenantAdapter.resolveTenantContext(actorUserId, tenantId);
       const res = await XamppTenantAdapter.listTenantAuditLogs(actorUserId, tenantId, {
         action: filters.action !== "all" ? filters.action : undefined,
         page: filters.page,
@@ -774,7 +781,12 @@ export class AuditService {
       };
     }
 
-    const context = await TenantService.resolveTenantContext(supabase, actorUserId, tenantId);
+    const context =
+      preResolvedContext &&
+      preResolvedContext.tenantId === tenantId &&
+      preResolvedContext.userId === actorUserId
+        ? preResolvedContext
+        : await TenantService.resolveTenantContext(supabase, actorUserId, tenantId);
     if (!hasPermission(context.role, "view_tenant_audit_logs")) {
       throw new ForbiddenError(
         "Seu nível de acesso não permite consultar o histórico de auditoria do estabelecimento."
@@ -810,9 +822,12 @@ export class AuditService {
 
     let query = supabase
       .from("audit_logs")
-      .select("id, tenant_id, actor_user_id, action, resource_type, resource_id, metadata, created_at", {
-        count: search ? undefined : "exact",
-      })
+      .select(
+        "id, tenant_id, actor_user_id, action, resource_type, resource_id, metadata, created_at, profiles(full_name)",
+        {
+          count: search ? undefined : "exact",
+        }
+      )
       .eq("tenant_id", context.tenantId)
       .order("created_at", { ascending: false });
 
@@ -905,6 +920,7 @@ export class AuditService {
       resource_id: string | null;
       metadata: Json;
       created_at: string;
+      profiles?: { full_name: string } | Array<{ full_name: string }> | null;
     }>,
     includePlatformMetadata: boolean,
     fixedTenant?: { id: string; name: string; slug: string }
@@ -923,10 +939,29 @@ export class AuditService {
     const tenantMap = new Map<string, { name: string; slug: string }>();
     const adminActorSet = new Set<string>();
 
-    const admin = actorIds.length > 0 ? createAdminClient() : null;
+    // Aproveita nomes já trazidos pelo JOIN PostgREST (audit_logs -> profiles) sem roundtrip extra
+    let hasEmbeddedProfiles = false;
+    for (const r of rows) {
+      if (r.profiles !== undefined) {
+        hasEmbeddedProfiles = true;
+        const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+        if (r.actor_user_id && p?.full_name) {
+          profileMap.set(r.actor_user_id, p.full_name);
+        }
+      }
+    }
 
-    const [profilesRes, authListRes, tenantsRes] = await Promise.all([
-      actorIds.length > 0
+    const needsProfileFetch = !hasEmbeddedProfiles && actorIds.length > 0;
+    const unresolvedEmbeddedActors = hasEmbeddedProfiles
+      ? actorIds.filter((id) => !profileMap.has(id))
+      : [];
+    const admin =
+      actorIds.length > 0 && (includePlatformMetadata || needsProfileFetch || unresolvedEmbeddedActors.length > 0)
+        ? createAdminClient()
+        : null;
+
+    const [profilesRes, authListRes, tenantsRes, embeddedAdminRes] = await Promise.all([
+      needsProfileFetch
         ? client.from("profiles").select("id, full_name").in("id", actorIds)
         : Promise.resolve({ data: null }),
       actorIds.length > 0 && includePlatformMetadata && admin
@@ -935,10 +970,17 @@ export class AuditService {
       !fixedTenant && tenantIds.length > 0
         ? client.from("tenants").select("id, name, slug").in("id", tenantIds)
         : Promise.resolve({ data: null }),
+      !includePlatformMetadata && hasEmbeddedProfiles && unresolvedEmbeddedActors.length > 0 && admin
+        ? admin.from("platform_admins").select("user_id").in("user_id", unresolvedEmbeddedActors)
+        : Promise.resolve({ data: null }),
     ]);
 
     for (const p of profilesRes.data ?? []) {
       profileMap.set(p.id, p.full_name);
+    }
+
+    for (const row of embeddedAdminRes.data ?? []) {
+      adminActorSet.add(row.user_id);
     }
 
     if (includePlatformMetadata) {
@@ -947,7 +989,7 @@ export class AuditService {
           emailMap.set(u.id, u.email);
         }
       }
-    } else if (actorIds.length > 0 && admin) {
+    } else if (!hasEmbeddedProfiles && actorIds.length > 0 && admin) {
       const unresolvedActors = actorIds.filter((id) => !profileMap.has(id));
       if (unresolvedActors.length > 0) {
         const { data: adminRows } = await admin
