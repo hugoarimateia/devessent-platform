@@ -3,12 +3,21 @@ import type { Database } from "@/types/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import { NotFoundError, ValidationError } from "@/core/errors/app-error";
-import { XamppRetailOrderAdapter } from "@/infrastructure/xampp-test/retail-order-adapter";
 import type {
   RetailCart,
   RetailCartItem,
   RetailInventoryMode,
 } from "../types/retail.types";
+
+async function loadXamppRetailOrderAdapter() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("VIOLAÇÃO DE AMBIENTE: Adaptador XAMPP proibido em produção.");
+  }
+  const { XamppRetailOrderAdapter } = await import(
+    "@/infrastructure/xampp-test/retail-order-adapter"
+  );
+  return XamppRetailOrderAdapter;
+}
 import { cartItemInputSchema, cartUpdateQuantitySchema } from "../schemas/order.schema";
 import {
   clearStoreCartToken,
@@ -224,7 +233,8 @@ export class RetailCartService {
   public static async getCartForStore(storeSlug: string): Promise<RetailCart | null> {
     const rawToken = await readStoreCartToken(storeSlug);
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       return XamppRetailOrderAdapter.getCart(storeSlug, rawToken);
     }
 
@@ -260,7 +270,8 @@ export class RetailCartService {
 
     const rawToken = await readStoreCartToken(storeSlug);
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       const result = await XamppRetailOrderAdapter.addOrIncrementCartItem({
         storeSlug,
         rawCartToken: rawToken,
@@ -387,7 +398,8 @@ export class RetailCartService {
 
     const rawToken = await readStoreCartToken(storeSlug);
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       const cart = await XamppRetailOrderAdapter.updateCartItemQuantity({
         storeSlug,
         rawCartToken: rawToken,
@@ -465,7 +477,8 @@ export class RetailCartService {
   public static async clearCart(storeSlug: string): Promise<RetailCart | null> {
     const rawToken = await readStoreCartToken(storeSlug);
 
-    if (isXamppTestMode()) {
+    if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
+      const XamppRetailOrderAdapter = await loadXamppRetailOrderAdapter();
       const result = await XamppRetailOrderAdapter.clearCart(storeSlug, rawToken);
       await clearStoreCartToken(storeSlug);
       return result;

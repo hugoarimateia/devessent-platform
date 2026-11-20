@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { getBackendCookiePrefix } from "@/lib/environment/backend-mode";
+import { isSecureCookieContext } from "@/lib/environment/cookie-options";
 
 export function getStoreCartCookieName(storeSlug: string): string {
   const safeSlug = storeSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "");
@@ -41,7 +42,7 @@ export async function writeStoreCartToken(storeSlug: string, token: string): Pro
   cookieStore.set(getStoreCartCookieName(storeSlug), token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookieContext(),
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 dias
   });
@@ -52,7 +53,7 @@ export async function clearStoreCartToken(storeSlug: string): Promise<void> {
   cookieStore.set(getStoreCartCookieName(storeSlug), "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookieContext(),
     path: "/",
     maxAge: 0,
   });
@@ -73,7 +74,7 @@ export async function writeStoreOrderReceiptToken(
   cookieStore.set(getStoreOrderReceiptCookieName(storeSlug, orderNumber), token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookieContext(),
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 dias
   });

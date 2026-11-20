@@ -12,17 +12,23 @@ const publicEnvSchema = z.object({
 });
 
 /**
- * Esquema completo para o backend oficial Supabase (Local ou Cloud)
+ * Esquema base do servidor para o backend oficial Supabase (sem exigir segredos de build-time).
+ * Em runtimes como Cloudflare Workers, segredos como SUPABASE_SERVICE_ROLE_KEY são injetados
+ * exclusivamente em runtime (Cloudflare Secrets) e validados sob demanda (fail-closed) no acesso.
  */
-const supabaseServerEnvSchema = publicEnvSchema.extend({
+const supabaseServerBaseEnvSchema = publicEnvSchema.extend({
   APP_BACKEND_MODE: z.literal("supabase").default("supabase"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url("NEXT_PUBLIC_SUPABASE_URL deve ser uma URL válida"),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20, "NEXT_PUBLIC_SUPABASE_ANON_KEY é obrigatória e deve ter formato JWT válido"),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20, "SUPABASE_SERVICE_ROLE_KEY é obrigatória no ambiente do servidor"),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   DATABASE_URL: z.string().min(10, "DATABASE_URL é obrigatória para migrações").optional(),
   AUTHORIZED_SANDBOX_PROJECT_ID: z.string().optional(),
 });
+
+const supabaseServiceRoleSchema = z
+  .string()
+  .min(20, "SUPABASE_SERVICE_ROLE_KEY é obrigatória no ambiente do servidor");
 
 /**
  * Esquema exclusivo para o ambiente secundário de testes locais XAMPP/MariaDB
@@ -61,24 +67,50 @@ export interface ServerEnv {
   XAMPP_STORAGE_DIR?: string;
 }
 
-function validateEnv(): ServerEnv {
-  const isServer = typeof window === "undefined";
+function validatePublicClientEnv(): ServerEnv {
+  const result = publicEnvSchema.safeParse({
+    NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  });
 
-  if (!isServer) {
-    const result = publicEnvSchema.safeParse({
-      NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
-      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    });
+  if (!result.success) {
+    const missingKeys = Object.keys(result.error.flatten().fieldErrors);
+    console.error("❌ Variáveis de ambiente públicas inválidas:", missingKeys.join(", "));
+    throw new Error(`Variáveis de ambiente públicas inválidas: ${missingKeys.join(", ")}`);
+  }
 
-    if (!result.success) {
-      const missingKeys = Object.keys(result.error.flatten().fieldErrors);
-      console.error("❌ Variáveis de ambiente públicas inválidas:", missingKeys.join(", "));
-      throw new Error(`Variáveis de ambiente públicas inválidas: ${missingKeys.join(", ")}`);
-    }
+  return result.data as unknown as ServerEnv;
+}
 
-    return result.data as unknown as ServerEnv;
+let cachedServerEnvFingerprint: string | null = null;
+let cachedServerEnv: ServerEnv | null = null;
+let cachedServerEnvHasServiceRole = false;
+
+function buildServerEnvFingerprint(): string {
+  return [
+    process.env.NODE_ENV ?? "",
+    process.env.APP_BACKEND_MODE ?? "",
+    process.env.NEXT_PUBLIC_APP_ENV ?? "",
+    process.env.NEXT_PUBLIC_APP_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+    process.env.XAMPP_DB_HOST ?? "",
+    process.env.XAMPP_DB_NAME ?? "",
+    process.env.XAMPP_SESSION_SECRET ?? "",
+  ].join("\0");
+}
+
+function validateServerEnv(requireServiceRole: boolean): ServerEnv {
+  const fingerprint = buildServerEnvFingerprint();
+  if (
+    cachedServerEnv &&
+    cachedServerEnvFingerprint === fingerprint &&
+    (!requireServiceRole || cachedServerEnvHasServiceRole)
+  ) {
+    return cachedServerEnv;
   }
 
   const mode = getAppBackendMode();
@@ -99,15 +131,19 @@ function validateEnv(): ServerEnv {
       );
     }
 
-    return {
+    const resolved: ServerEnv = {
       ...result.data,
       NEXT_PUBLIC_SUPABASE_URL: result.data.NEXT_PUBLIC_SUPABASE_URL || "",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: result.data.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
       SUPABASE_SERVICE_ROLE_KEY: result.data.SUPABASE_SERVICE_ROLE_KEY || "",
     };
+    cachedServerEnvFingerprint = fingerprint;
+    cachedServerEnv = resolved;
+    cachedServerEnvHasServiceRole = true;
+    return resolved;
   }
 
-  const result = supabaseServerEnvSchema.safeParse({
+  const result = supabaseServerBaseEnvSchema.safeParse({
     ...process.env,
     APP_BACKEND_MODE: "supabase",
   });
@@ -122,7 +158,56 @@ function validateEnv(): ServerEnv {
     );
   }
 
-  return result.data;
+  const serviceRoleKey = result.data.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+  if (requireServiceRole) {
+    const keyCheck = supabaseServiceRoleSchema.safeParse(serviceRoleKey);
+    if (!keyCheck.success) {
+      console.error(
+        "❌ Falha crítica na configuração do Supabase oficial: SUPABASE_SERVICE_ROLE_KEY ausente ou inválida em runtime."
+      );
+      throw new Error(
+        "Configurações obrigatórias do Supabase ausentes ou inválidas: SUPABASE_SERVICE_ROLE_KEY"
+      );
+    }
+  }
+
+  const resolved: ServerEnv = {
+    ...result.data,
+    SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+  };
+  cachedServerEnvFingerprint = fingerprint;
+  cachedServerEnv = resolved;
+  cachedServerEnvHasServiceRole =
+    requireServiceRole || supabaseServiceRoleSchema.safeParse(serviceRoleKey).success;
+  return resolved;
 }
 
-export const env = validateEnv();
+/**
+ * Acesso validado às variáveis de ambiente.
+ * No cliente (browser), resolve exclusivamente variáveis públicas `NEXT_PUBLIC_*`.
+ * No servidor (Node.js ou Cloudflare Workers), resolve de forma lazy em runtime para suportar
+ * bindings e Cloudflare Secrets sem exigir `SUPABASE_SERVICE_ROLE_KEY` no momento do build estático.
+ */
+export const env: ServerEnv =
+  typeof window !== "undefined"
+    ? validatePublicClientEnv()
+    : new Proxy({} as ServerEnv, {
+        get(_target, prop) {
+          if (typeof prop !== "string") return undefined;
+          const resolved = validateServerEnv(prop === "SUPABASE_SERVICE_ROLE_KEY");
+          return resolved[prop as keyof ServerEnv];
+        },
+        ownKeys() {
+          return Reflect.ownKeys(validateServerEnv(false));
+        },
+        getOwnPropertyDescriptor(_target, prop) {
+          if (typeof prop !== "string") return undefined;
+          const resolved = validateServerEnv(prop === "SUPABASE_SERVICE_ROLE_KEY");
+          if (!(prop in resolved)) return undefined;
+          return {
+            enumerable: true,
+            configurable: true,
+            value: resolved[prop as keyof ServerEnv],
+          };
+        },
+      });

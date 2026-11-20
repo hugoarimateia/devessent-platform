@@ -29,23 +29,70 @@ function buildPostAuthRedirectUrl(request: NextRequest): URL {
   return redirectUrl;
 }
 
+function applyEdgeSecurityHeaders(
+  response: NextResponse,
+  pathname: string,
+  isPrivate: boolean
+): NextResponse {
+  if (isPrivate) {
+    response.headers.set(
+      "Cache-Control",
+      "private, no-store, no-cache, must-revalidate"
+    );
+    const existingVary = response.headers.get("Vary");
+    if (!existingVary) {
+      response.headers.set("Vary", "Cookie");
+    } else if (!existingVary.toLowerCase().includes("cookie")) {
+      response.headers.set("Vary", `${existingVary}, Cookie`);
+    }
+  }
+
+  if (process.env.NEXT_PUBLIC_APP_ENV === "staging") {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
+
+  if (pathname.startsWith("/auth/") || pathname.startsWith("/convite")) {
+    response.headers.set("Referrer-Policy", "no-referrer");
+  }
+
+  return response;
+}
+
+function copyCookies(source: NextResponse, target: NextResponse): void {
+  for (const cookie of source.cookies.getAll()) {
+    target.cookies.set(cookie);
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   const isAuthRoute =
     pathname.startsWith("/login") ||
-    pathname.startsWith("/recuperar-senha");
+    pathname.startsWith("/recuperar-senha") ||
+    pathname.startsWith("/redefinir-senha");
 
   const isProtectedRoute =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/admin");
 
+  const isPrivateEdgeRoute =
+    isProtectedRoute ||
+    isAuthRoute ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/convite") ||
+    pathname.startsWith("/api");
+
   // Modo exclusivamente local XAMPP (desenvolvimento/testes sem Docker)
   if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
     const hasXamppSession = hasValidXamppCookieShape(request);
 
-    if (hasXamppSession && isAuthRoute) {
-      return NextResponse.redirect(buildPostAuthRedirectUrl(request));
+    if (hasXamppSession && (pathname.startsWith("/login") || pathname.startsWith("/recuperar-senha"))) {
+      return applyEdgeSecurityHeaders(
+        NextResponse.redirect(buildPostAuthRedirectUrl(request)),
+        pathname,
+        true
+      );
     }
 
     if (!hasXamppSession && isProtectedRoute) {
@@ -53,17 +100,23 @@ export async function middleware(request: NextRequest) {
       loginUrl.pathname = "/login";
       const originalDestination = sanitizeRedirectUrl(pathname + search, "/dashboard");
       loginUrl.searchParams.set("redirect", originalDestination);
-      return NextResponse.redirect(loginUrl);
+      return applyEdgeSecurityHeaders(NextResponse.redirect(loginUrl), pathname, true);
     }
 
-    return NextResponse.next({ request });
+    return applyEdgeSecurityHeaders(
+      NextResponse.next({ request }),
+      pathname,
+      isPrivateEdgeRoute
+    );
   }
 
   // Modo Oficial: Supabase SSR
   const { supabaseResponse, user } = await updateSession(request);
 
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(buildPostAuthRedirectUrl(request));
+  if (user && (pathname.startsWith("/login") || pathname.startsWith("/recuperar-senha"))) {
+    const redirectRes = NextResponse.redirect(buildPostAuthRedirectUrl(request));
+    copyCookies(supabaseResponse, redirectRes);
+    return applyEdgeSecurityHeaders(redirectRes, pathname, true);
   }
 
   if (!user && isProtectedRoute) {
@@ -71,10 +124,12 @@ export async function middleware(request: NextRequest) {
     loginUrl.pathname = "/login";
     const originalDestination = sanitizeRedirectUrl(pathname + search, "/dashboard");
     loginUrl.searchParams.set("redirect", originalDestination);
-    return NextResponse.redirect(loginUrl);
+    const redirectRes = NextResponse.redirect(loginUrl);
+    copyCookies(supabaseResponse, redirectRes);
+    return applyEdgeSecurityHeaders(redirectRes, pathname, true);
   }
 
-  return supabaseResponse;
+  return applyEdgeSecurityHeaders(supabaseResponse, pathname, isPrivateEdgeRoute);
 }
 
 export const config = {

@@ -37,6 +37,7 @@ async function resolveClientIp(): Promise<string> {
   try {
     const h = await headers();
     return (
+      h.get("cf-connecting-ip")?.trim() ||
       h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       h.get("x-real-ip")?.trim() ||
       "127.0.0.1"

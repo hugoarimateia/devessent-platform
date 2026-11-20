@@ -32,9 +32,14 @@ export async function POST(
 
   const providerName = rawProvider as RetailPaymentProviderName;
   const clientIp =
+    request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     "unknown";
+
+  const noStoreHeaders = {
+    "Cache-Control": "private, no-store, max-age=0",
+  };
 
   try {
     const rateKey = `${clientIp}:${providerName}`;
@@ -51,15 +56,15 @@ export async function POST(
     if (contentLength > MAX_WEBHOOK_BODY_BYTES) {
       return NextResponse.json(
         { ok: false, error: "PAYLOAD_TOO_LARGE" },
-        { status: 413 }
+        { status: 413, headers: noStoreHeaders }
       );
     }
 
     const rawBody = await request.text();
-    if (Buffer.byteLength(rawBody, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BODY_BYTES) {
       return NextResponse.json(
         { ok: false, error: "PAYLOAD_TOO_LARGE" },
-        { status: 413 }
+        { status: 413, headers: noStoreHeaders }
       );
     }
 
@@ -88,7 +93,7 @@ export async function POST(
         paymentStatus: result.paymentStatus,
         processingResult: result.processingResult,
       },
-      { status: 200 }
+      { status: 200, headers: noStoreHeaders }
     );
   } catch (err) {
     if (err instanceof RateLimitError) {
@@ -96,31 +101,34 @@ export async function POST(
         { ok: false, error: "RATE_LIMIT_EXCEEDED" },
         {
           status: 429,
-          headers: { "Retry-After": String(err.retryAfterSeconds) },
+          headers: {
+            ...noStoreHeaders,
+            "Retry-After": String(err.retryAfterSeconds),
+          },
         }
       );
     }
     if (err instanceof UnauthorizedError) {
       return NextResponse.json(
         { ok: false, error: "WEBHOOK_SIGNATURE_INVALID" },
-        { status: 401 }
+        { status: 401, headers: noStoreHeaders }
       );
     }
     if (err instanceof NotFoundError) {
       return NextResponse.json(
         { ok: false, error: "PAYMENT_NOT_FOUND" },
-        { status: 404 }
+        { status: 404, headers: noStoreHeaders }
       );
     }
     if (err instanceof ValidationError) {
       return NextResponse.json(
         { ok: false, error: "INVALID_WEBHOOK_PAYLOAD" },
-        { status: 400 }
+        { status: 400, headers: noStoreHeaders }
       );
     }
     return NextResponse.json(
       { ok: false, error: "WEBHOOK_PROCESSING_ERROR" },
-      { status: 500 }
+      { status: 500, headers: noStoreHeaders }
     );
   }
 }

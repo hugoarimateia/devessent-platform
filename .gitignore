@@ -9,7 +9,15 @@
 
 # production
 /build
+/dist/
+/.wrangler/
+/.open-next/
+/.vinext/
 *.tsbuildinfo
+
+# cloudflare local secrets (NUNCA versionar)
+.dev.vars
+.dev.vars.*
 
 # testing
 /coverage

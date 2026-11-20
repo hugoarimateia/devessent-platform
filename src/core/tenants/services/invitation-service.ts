@@ -110,24 +110,26 @@ export class InvitationService {
       throw new Error(toPublicErrorMessage(error, "Não foi possível registrar o convite de acesso."));
     }
 
-    // 7. Enviar e-mail de notificação ao convidado
-    const inviteUrl = `${env.NEXT_PUBLIC_APP_URL}/convite/${rawToken}`;
-    try {
-      // Disparar envio local de simulação / SMTP Mailpit
-      await fetch("http://127.0.0.1:54324/api/v1/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          From: { Email: "nao-responda@devessent.com.br", Name: "DevEssent Platform" },
-          To: [{ Email: parsed.data.email }],
-          Subject: `Você foi convidado para integrar ${context.tenantName}`,
-          Text: `Olá!\n\nVocê recebeu um convite para integrar o estabelecimento ${context.tenantName} na DevEssent Platform com o papel de ${parsed.data.role}.\n\nPara aceitar, acesse o link seguro abaixo:\n${inviteUrl}\n\nEste link expira em 7 dias.`,
-        }),
-      }).catch(() => {
-        // Mailpit opcional em tempo de execução
-      });
-    } catch {
-      // Falha de envio não trava o registro
+    // 7. Enviar e-mail de notificação ao convidado (Mailpit apenas em desenvolvimento local)
+    const inviteUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, "")}/convite/${rawToken}`;
+    if (process.env.NODE_ENV !== "production" && env.NEXT_PUBLIC_APP_ENV === "development") {
+      try {
+        // Disparar envio local de simulação / SMTP Mailpit
+        await fetch("http://127.0.0.1:54324/api/v1/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            From: { Email: "nao-responda@devessent.com.br", Name: "DevEssent Platform" },
+            To: [{ Email: parsed.data.email }],
+            Subject: `Você foi convidado para integrar ${context.tenantName}`,
+            Text: `Olá!\n\nVocê recebeu um convite para integrar o estabelecimento ${context.tenantName} na DevEssent Platform com o papel de ${parsed.data.role}.\n\nPara aceitar, acesse o link seguro abaixo:\n${inviteUrl}\n\nEste link expira em 7 dias.`,
+          }),
+        }).catch(() => {
+          // Mailpit opcional em tempo de execução
+        });
+      } catch {
+        // Falha de envio não trava o registro
+      }
     }
 
     // 8. Registrar auditoria (NUNCA registrar o token em texto puro)

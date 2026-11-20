@@ -58,6 +58,9 @@ import type {
 import { RetailOrderService } from "./retail-order-service";
 
 async function loadXamppRetailPaymentAdapter() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("VIOLAÇÃO DE AMBIENTE: Adaptador XAMPP proibido em produção.");
+  }
   const { XamppRetailPaymentAdapter } = await import(
     "@/infrastructure/xampp-test/retail-payment-adapter"
   );

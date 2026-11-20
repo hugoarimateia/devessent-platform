@@ -9,6 +9,10 @@
     "dev:staging": "tsx scripts/dev-staging.ts dev",
     "build:staging": "tsx scripts/dev-staging.ts build",
     "start:staging": "tsx scripts/dev-staging.ts start",
+    "cf:build:staging": "tsx scripts/cf-staging.ts build",
+    "cf:verify:staging": "tsx scripts/cf-staging.ts verify-bundle",
+    "cf:preview:staging": "tsx scripts/cf-staging.ts preview",
+    "cf:deploy:staging": "tsx scripts/cf-staging.ts deploy",
     "dev:cloud": "tsx scripts/run-with-mode.ts supabase dev",
     "dev:xampp": "tsx scripts/run-with-mode.ts xampp-test dev",
     "staging:seed": "tsx scripts/staging-seed.ts",
@@ -50,21 +54,28 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1.70.1",
     "@eslint/eslintrc": "^3.3.0",
     "@playwright/test": "^1.65.0",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "6.3.0",
+    "@vitejs/plugin-rsc": "0.5.39",
     "@vitest/coverage-v8": "^3.0.8",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.21.0",
     "eslint-config-next": "^15.2.1",
     "postcss": "^8.5.3",
     "prettier": "^3.5.3",
+    "react-server-dom-webpack": "19.3.1",
     "supabase": "^3.1.0",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "vinext": "1.4.6",
+    "vite": "8.3.8",
+    "vitest": "^3.0.8",
+    "wrangler": "4.165.0"
   }
 }

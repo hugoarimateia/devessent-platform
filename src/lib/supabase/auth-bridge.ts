@@ -31,6 +31,7 @@ interface BridgePayload {
 
 function getBridgeSecret(): string | null {
   const secret =
+    process.env.AUTH_BRIDGE_SECRET?.trim() ||
     process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
     process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY?.trim() ||
     process.env.XAMPP_SESSION_SECRET?.trim() ||

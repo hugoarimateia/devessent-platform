@@ -1,6 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import * as fs from "fs";
-import * as path from "path";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
 
 export async function GET(
@@ -21,7 +19,11 @@ export async function GET(
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 
-  const { resolveSafeStoragePath } = await import("@/infrastructure/xampp-test/storage");
+  const [fs, path, { resolveSafeStoragePath }] = await Promise.all([
+    import("fs"),
+    import("path"),
+    import("@/infrastructure/xampp-test/storage"),
+  ]);
 
   try {
     const fullPath = resolveSafeStoragePath(relPath);

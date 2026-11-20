@@ -127,7 +127,8 @@ export class AuthService {
     supabase: AppSupabaseClient,
     email: string
   ) {
-    const redirectTo = `${env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/redefinir-senha`;
+    const baseUrl = env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, "");
+    const redirectTo = `${baseUrl}/auth/callback?next=/redefinir-senha`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,

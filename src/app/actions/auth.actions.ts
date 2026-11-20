@@ -17,6 +17,7 @@ import {
   getActiveTenantCookieName,
   isXamppTestMode,
 } from "@/lib/environment/backend-mode";
+import { isSecureCookieContext } from "@/lib/environment/cookie-options";
 
 export interface ActionState {
   success?: boolean;
@@ -140,6 +141,7 @@ export async function loginAction(
           path: "/",
           sameSite: "lax",
           httpOnly: true,
+          secure: isSecureCookieContext(),
           maxAge: 60 * 60 * 24 * 30,
         });
       } else {

@@ -18,11 +18,20 @@ function assertServerOnly(): void {
 
 function deriveEncryptionKey(tenantId: string): Buffer {
   assertServerOnly();
+  const configuredSecret =
+    process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+    (process.env.NODE_ENV !== "production" ? process.env.XAMPP_SESSION_SECRET?.trim() : "") ||
+    "";
+
+  if (!configuredSecret && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "VIOLAÇÃO CRÍTICA DE SEGURANÇA (Fail-Closed): PAYMENT_CREDENTIALS_ENCRYPTION_KEY ou SUPABASE_SERVICE_ROLE_KEY é obrigatória em produção/staging."
+    );
+  }
+
   const masterSecret =
-    process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.XAMPP_SESSION_SECRET ||
-    "devessent-default-sandbox-key-material-32bytes";
+    configuredSecret || "devessent-default-sandbox-key-material-32bytes";
 
   return createHmac("sha256", masterSecret)
     .update(`devessent:payment_vault:v1:${tenantId.toLowerCase()}`)

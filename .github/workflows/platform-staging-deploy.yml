@@ -1,0 +1,147 @@
+name: Platform Staging Deploy — Cloudflare Workers (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_app_url:
+        description: "URL HTTPS de staging do Worker (opcional; usa variable/secret STAGING_APP_URL se vazio)"
+        required: false
+        type: string
+      confirm_staging:
+        description: "Digite 'staging' para confirmar o deploy controlado no Worker devessent-platform-staging"
+        required: true
+        default: "staging"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-platform-staging:
+    name: Validar Qualidade, Construir Worker (vinext) e Publicar Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_BACKEND_MODE: supabase
+      NEXT_PUBLIC_APP_ENV: staging
+      NEXT_TELEMETRY_DISABLED: "1"
+      WRANGLER_SEND_METRICS: "false"
+
+    steps:
+      - name: Validar confirmação manual de staging
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirm_staging }}" != "staging" ]; then
+            echo "::error::Confirmação inválida. Informe exatamente 'staging' para executar este deploy."
+            exit 1
+          fi
+
+      - name: Validar isolamento de conta Cloudflare e variáveis obrigatórias (Fail-Closed)
+        shell: bash
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SB_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SB_ANON: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          APP_URL_SECRET: ${{ secrets.STAGING_APP_URL }}
+          APP_URL_INPUT: ${{ inputs.staging_app_url }}
+        run: |
+          if [ -z "$CF_ACCOUNT_ID" ] || [ -z "$CF_API_TOKEN" ]; then
+            echo "::error::Secrets CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_API_TOKEN (exclusivos da conta DevEssent) são obrigatórios."
+            exit 1
+          fi
+
+          # Fail-closed: impedir categoricamente qualquer uso da conta Cloudflare do projeto EJC
+          if [ "$(echo "$CF_ACCOUNT_ID" | tr '[:upper:]' '[:lower:]')" = "0d0228f378b5e4f3f63c67b4210bf3ea" ]; then
+            echo "::error::BLOQUEIO CRÍTICO: CLOUDFLARE_ACCOUNT_ID corresponde à conta EJC. Deploy abortado."
+            exit 1
+          fi
+
+          if [ "$SB_URL" != "https://auebnppzxcvtaaqqlbts.supabase.co" ]; then
+            echo "::error::BLOQUEIO DE BANCO: STAGING_SUPABASE_URL deve apontar exclusivamente para o Supabase Cloud Staging autorizado (auebnppzxcvtaaqqlbts)."
+            exit 1
+          fi
+
+          if [ -z "$SB_ANON" ]; then
+            echo "::error::Secret STAGING_SUPABASE_ANON_KEY é obrigatória."
+            exit 1
+          fi
+
+          RESOLVED_URL="${APP_URL_INPUT:-$APP_URL_SECRET}"
+          if [ -z "$RESOLVED_URL" ]; then
+            echo "::error::Informe staging_app_url ou configure o secret STAGING_APP_URL com a URL HTTPS do Worker de staging."
+            exit 1
+          fi
+
+          if [[ "$RESOLVED_URL" != https://* ]]; then
+            echo "::error::URL de staging deve usar HTTPS."
+            exit 1
+          fi
+
+          if [[ "$RESOLVED_URL" == *"app.devessent.com.br"* ]] || [[ "$RESOLVED_URL" == *"devessent-landing.pages.dev"* ]]; then
+            echo "::error::URL de produção ou da landing page é proibida neste workflow de staging."
+            exit 1
+          fi
+
+          echo "RESOLVED_STAGING_APP_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
+
+      - name: Checkout do repositório
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configurar pnpm
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: 10
+
+      - name: Configurar Node.js com cache pnpm
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Instalar dependências (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Validar arquitetura e isolamento do projeto
+        run: pnpm check:project
+
+      - name: Validar tipagem TypeScript
+        run: pnpm typecheck
+
+      - name: Validar ESLint / Next.js
+        run: pnpm lint
+
+      - name: Executar testes unitários offline
+        env:
+          NEXT_PUBLIC_APP_ENV: test
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-offline-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-offline-public-anon-placeholder-key-not-a-secret-0001
+          SUPABASE_SERVICE_ROLE_KEY: ci-offline-server-placeholder-key-not-a-secret-0001
+        run: pnpm vitest run tests/unit/
+
+      - name: Build Cloudflare Workers Staging (vinext) e verificação de artefato
+        env:
+          NEXT_PUBLIC_APP_ENV: staging
+          NEXT_PUBLIC_APP_URL: ${{ env.RESOLVED_STAGING_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+        run: pnpm cf:build:staging
+
+      - name: Deploy controlado no Worker devessent-platform-staging
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEXT_PUBLIC_APP_ENV: staging
+          NEXT_PUBLIC_APP_URL: ${{ env.RESOLVED_STAGING_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+        run: |
+          echo "Commit alvo : ${{ github.sha }}"
+          echo "Branch/Ref  : ${{ github.ref_name }}"
+          echo "Worker alvo : devessent-platform-staging"
+          pnpm cf:deploy:staging

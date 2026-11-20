@@ -42,6 +42,9 @@ import {
 type AppSupabaseClient = SupabaseClient<Database, any, any>;
 
 async function loadXamppRetailOrderAdapter() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("VIOLAÇÃO DE AMBIENTE: Adaptador XAMPP proibido em produção.");
+  }
   const { XamppRetailOrderAdapter } = await import(
     "@/infrastructure/xampp-test/retail-order-adapter"
   );

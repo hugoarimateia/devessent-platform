@@ -97,10 +97,45 @@ describe("Middleware -> RSC Auth Bridge (HMAC-SHA256)", () => {
     expect(verified).toBeNull();
   });
 
+  it("prioriza AUTH_BRIDGE_SECRET dedicado quando configurado", async () => {
+    const prevDedicated = process.env.AUTH_BRIDGE_SECRET;
+    process.env.AUTH_BRIDGE_SECRET = "dedicated-cloudflare-auth-bridge-secret-32chars";
+    try {
+      const header = await createMiddlewareAuthBridgeHeader({
+        user: sampleUser,
+        cookiesList: sampleCookies,
+      });
+      expect(header).toBeTruthy();
+
+      // Verificação com o mesmo AUTH_BRIDGE_SECRET funciona
+      const verified = await verifyMiddlewareAuthBridgeHeader({
+        headerValue: header,
+        cookiesList: sampleCookies,
+      });
+      expect(verified).toEqual(sampleUser);
+
+      // Se AUTH_BRIDGE_SECRET mudar, o token antigo é rejeitado mesmo com SUPABASE_SERVICE_ROLE_KEY igual
+      process.env.AUTH_BRIDGE_SECRET = "another-dedicated-secret-value-at-least-32chars";
+      const rejected = await verifyMiddlewareAuthBridgeHeader({
+        headerValue: header,
+        cookiesList: sampleCookies,
+      });
+      expect(rejected).toBeNull();
+    } finally {
+      if (prevDedicated === undefined) {
+        delete process.env.AUTH_BRIDGE_SECRET;
+      } else {
+        process.env.AUTH_BRIDGE_SECRET = prevDedicated;
+      }
+    }
+  });
+
   it("falha fechado (retorna null) quando nenhum segredo de servidor está configurado", async () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const prevBridge = process.env.AUTH_BRIDGE_SECRET;
     const prevEnc = process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY;
     const prevXampp = process.env.XAMPP_SESSION_SECRET;
+    delete process.env.AUTH_BRIDGE_SECRET;
     delete process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY;
     delete process.env.XAMPP_SESSION_SECRET;
 
@@ -117,6 +152,7 @@ describe("Middleware -> RSC Auth Bridge (HMAC-SHA256)", () => {
       });
       expect(verified).toBeNull();
     } finally {
+      if (prevBridge !== undefined) process.env.AUTH_BRIDGE_SECRET = prevBridge;
       if (prevEnc !== undefined) process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY = prevEnc;
       if (prevXampp !== undefined) process.env.XAMPP_SESSION_SECRET = prevXampp;
     }

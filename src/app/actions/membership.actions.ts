@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
+import { isSecureCookieContext } from "@/lib/environment/cookie-options";
 import { AuthService } from "@/core/auth/services/auth-service";
 import { toPublicErrorMessage } from "@/core/errors/public-error";
 import { RATE_LIMIT_POLICIES, RateLimitService } from "@/core/security";
@@ -201,6 +202,7 @@ export async function acceptInvitationAction(rawToken: string): Promise<Membersh
       path: "/",
       sameSite: "lax",
       httpOnly: true,
+      secure: isSecureCookieContext(),
       maxAge: 60 * 60 * 24 * 30,
     });
 
