@@ -52,6 +52,16 @@ local-test/staging/
 /scratch/
 *.sql.bak
 
+# local-test & internal tool runtime data (NUNCA versionar segredos ou lotes locais)
+tools/catalog-onboarding/.env.scanner.local
+tools/catalog-onboarding/.next/
+tools/catalog-onboarding/node_modules/
+tools/catalog-onboarding/data/batches/
+tools/catalog-onboarding/data/uploads/
+tools/catalog-onboarding/coverage/
+tools/catalog-onboarding/next-env.d.ts
+tools/catalog-onboarding/*.traineddata
+
 # do not ignore .env.example
 !.env.example
 

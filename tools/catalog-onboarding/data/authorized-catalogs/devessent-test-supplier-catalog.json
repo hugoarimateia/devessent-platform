@@ -1,0 +1,139 @@
+{
+  "catalogId": "devessent-authorized-demo-supplier-v1",
+  "sourceName": "Catálogo Autorizado de Fornecedor Homologado (DevEssent Staging)",
+  "licenseNote": "Dados fictícios licenciados exclusivamente para testes controlados no ambiente DevEssent Staging.",
+  "records": [
+    {
+      "gtin": "7891000100103",
+      "sku": "SCAN-LINHO-CAM-01",
+      "name": "Camisa Linho Lavado Off-White",
+      "brand": "Ateliê Norte",
+      "description": "Camisa de linho puro pré-lavado com modelagem reta e botões em madrepérola natural.",
+      "category": "Camisaria",
+      "presentation": "Unidade · 100% Linho",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100202",
+      "sku": "SCAN-ALFAIAT-CAL-02",
+      "name": "Calça Pantalona Alfaiataria Areia",
+      "brand": "Ateliê Norte",
+      "description": "Calça de cintura alta com pregas frontais em tecido estruturado de viscose e linho.",
+      "category": "Alfaiataria",
+      "presentation": "Unidade · Cintura Alta",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100301",
+      "sku": "SCAN-TRICOT-CAR-03",
+      "name": "Cardigan Tricot Ponto Arroz Grafite",
+      "brand": "Ateliê Norte",
+      "description": "Cardigan em fio de algodão egípcio com acabamento canelado e toque macio.",
+      "category": "Tricot",
+      "presentation": "Unidade · Algodão Egípcio",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100400",
+      "sku": "SCAN-ACESS-BOL-04",
+      "name": "Bolsa Tote Estruturada Lona Crua",
+      "brand": "Oficina Sul",
+      "description": "Bolsa tote com alças reforçadas em couro vegetal e compartimento interno para notebook.",
+      "category": "Acessórios",
+      "presentation": "Unidade · 38x32x14cm",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100509",
+      "sku": "SCAN-CASA-VELA-05",
+      "name": "Vela Aromática Figo e Cedro 190g",
+      "brand": "Casa Essenza",
+      "description": "Vela artesanal em cera vegetal de coco com pavio de algodão e queima aproximada de 40 horas.",
+      "category": "Casa & Aromas",
+      "presentation": "190g · Vidro Âmbar",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100608",
+      "sku": "SCAN-CASA-DIF-06",
+      "name": "Difusor de Ambiente Alecrim e Bergamota 250ml",
+      "brand": "Casa Essenza",
+      "description": "Difusor com 6 varetas de fibra preta de alta absorção para ambientes residenciais e comerciais.",
+      "category": "Casa & Aromas",
+      "presentation": "250ml · Frasco Vidro",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100707",
+      "sku": "SCAN-BOTAN-SUB-07",
+      "name": "Substrato Orgânico Aerado para Folhagens 2kg",
+      "brand": "Jardim Técnico",
+      "description": "Mistura balanceada de casca de pinus compostada, perlita expandida e fibra de coco lavada.",
+      "category": "Substratos",
+      "presentation": "2kg · Saco Kraft",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100806",
+      "sku": "SCAN-BOTAN-VAS-08",
+      "name": "Cachepot Cerâmica Fosca Terracota 18cm",
+      "brand": "Cerâmica Bruta",
+      "description": "Cachepot artesanal torneado à mão com acabamento fosco acetinado e base protetora em cortiça.",
+      "category": "Vasos & Cachepots",
+      "presentation": "18cm x 16cm",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000100905",
+      "sku": "SCAN-BOTAN-REG-09",
+      "name": "Regador Bico Fino Aço Inox Escovado 1,2L",
+      "brand": "Jardim Técnico",
+      "description": "Regador de precisão com bico longo para rega controlada em plantas de interior.",
+      "category": "Ferramentas",
+      "presentation": "1,2L · Aço Inox",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "7891000101001",
+      "sku": "SCAN-VEST-VES-10",
+      "name": "Vestido Midi Evasê Algodão Orgânico Oliva",
+      "brand": "Ateliê Norte",
+      "description": "Vestido midi com bolsos laterais embutidos, decote quadrado e tecido respirável certificado.",
+      "category": "Vestidos",
+      "presentation": "Unidade · Algodão Orgânico",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "78910003",
+      "sku": "SCAN-MINI-ETQ-11",
+      "name": "Kit 3 Sabonetes Vegetais Lavanda 90g",
+      "brand": "Casa Essenza",
+      "description": "Sabonetes em barra prensados a frio com óleo essencial de lavanda francesa.",
+      "category": "Casa & Aromas",
+      "presentation": "3x90g · EAN-8",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    },
+    {
+      "gtin": "012345678905",
+      "sku": "SCAN-UPC-TES-12",
+      "name": "Tesoura de Poda Precisão Carbono",
+      "brand": "Jardim Técnico",
+      "description": "Lâmina de aço carbono afiada com trava de segurança e empunhadura ergonômica.",
+      "category": "Ferramentas",
+      "presentation": "18cm · UPC-A",
+      "sourceName": "Catálogo Autorizado de Fornecedor Homologado",
+      "licenseNote": "Uso autorizado para homologação Staging"
+    }
+  ]
+}
