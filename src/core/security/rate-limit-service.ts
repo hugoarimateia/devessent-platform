@@ -77,6 +77,20 @@ export const RATE_LIMIT_POLICIES = {
     blockSeconds: 120,
     message: "Limite de notificações de webhook excedido para esta origem.",
   },
+  billingWebhook: {
+    scope: "billing:saas_webhook",
+    maxAttempts: 120,
+    windowSeconds: 60,
+    blockSeconds: 120,
+    message: "Limite de notificações de webhook de assinaturas SaaS excedido para esta origem.",
+  },
+  billingAuthorization: {
+    scope: "billing:saas_authorization",
+    maxAttempts: 20,
+    windowSeconds: 300,
+    blockSeconds: 300,
+    message: "Muitas tentativas de autorização de assinatura em sequência. Aguarde alguns minutos.",
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 function hashIdentifier(raw: string): string {

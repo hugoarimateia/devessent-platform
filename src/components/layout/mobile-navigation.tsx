@@ -21,6 +21,7 @@ import {
   Palette,
   ClipboardList,
   CreditCard,
+  Receipt,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -144,7 +145,13 @@ export function MobileNavigation({
       : []),
   ];
 
+  const canViewOwnSubscription =
+    activeRole === "platform_admin" || activeRole === "owner";
+
   const settingsItems = [
+    ...(canViewOwnSubscription
+      ? [{ href: "/dashboard/assinatura", label: "Minha Assinatura", icon: Receipt }]
+      : []),
     { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
   ];
 
@@ -152,6 +159,7 @@ export function MobileNavigation({
     { href: "/admin", label: "Visão Global", icon: Shield },
     { href: "/admin/empresas", label: "Empresas", icon: Building2 },
     { href: "/admin/empresas/nova", label: "Nova Empresa", icon: PlusCircle },
+    { href: "/admin/comercial", label: "Comercial & Billing", icon: Receipt },
     { href: "/admin/sites", label: "Customização de Sites", icon: Palette },
     { href: "/admin/atividades", label: "Atividades", icon: Activity },
   ];

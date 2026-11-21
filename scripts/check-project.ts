@@ -75,13 +75,34 @@ if (fs.existsSync(srcDir)) {
 // 3. Verificar integridade e isolamento em src/modules/
 const modulesDir = path.join(projectRoot, "src", "modules");
 if (fs.existsSync(modulesDir)) {
-  const allowedEntries = new Set(["README.md", "retail"]);
+  const allowedEntries = new Set(["README.md", "retail", "billing"]);
   const moduleEntries = fs.readdirSync(modulesDir);
   const unauthorizedEntries = moduleEntries.filter((f) => !allowedEntries.has(f));
   if (unauthorizedEntries.length > 0) {
     console.error(`❌ VIOLAÇÃO MODULAR: src/modules/ contém módulos não autorizados: ${unauthorizedEntries.join(", ")}`);
     hasErrors = true;
   }
+
+  // 3b. Separação financeira obrigatória: billing NUNCA importa retail e retail NUNCA importa billing
+  const scanCrossModule = (dir: string, forbiddenTarget: string, label: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanCrossModule(fullPath, forbiddenTarget, label);
+      } else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+        const content = fs.readFileSync(fullPath, "utf-8");
+        if (content.includes(forbiddenTarget)) {
+          console.error(
+            `❌ VIOLAÇÃO DE SEPARAÇÃO FINANCEIRA (${label}): ${path.relative(projectRoot, fullPath)} referencia ${forbiddenTarget}!`
+          );
+          hasErrors = true;
+        }
+      }
+    }
+  };
+  scanCrossModule(path.join(modulesDir, "billing"), "@/modules/retail", "billing -> retail");
+  scanCrossModule(path.join(modulesDir, "retail"), "@/modules/billing", "retail -> billing");
 }
 
 // 4. Regra Arquitetural Crítica: src/core/ NUNCA pode importar src/modules/
