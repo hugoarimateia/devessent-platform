@@ -189,7 +189,9 @@ export function TenantsManager({ tenants }: TenantsManagerProps) {
                       data-label="Cadastrado em"
                       className="py-3.5 px-4 font-mono text-foreground-muted tabular-nums"
                     >
-                      {new Date(tenant.created_at).toLocaleDateString("pt-BR")}
+                      {new Date(tenant.created_at).toLocaleDateString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })}
                     </td>
                     <td data-label="Ações" className="py-3.5 px-5 text-right">
                       <div className="inline-flex items-center justify-end gap-2">

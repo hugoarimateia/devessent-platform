@@ -156,7 +156,9 @@ export function StorefrontOrderReceipt({
               </h1>
               <p className={`text-xs sm:text-sm ${isExperimental ? "text-neutral-400" : "text-stone-600"}`}>
                 Recebido por <strong>{order.storeName}</strong> em{" "}
-                {new Date(order.createdAt).toLocaleString("pt-BR")}.
+                {new Date(order.createdAt).toLocaleString("pt-BR", {
+                  timeZone: "America/Sao_Paulo",
+                })}.
               </p>
             </div>
 

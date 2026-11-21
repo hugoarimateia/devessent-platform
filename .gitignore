@@ -56,6 +56,14 @@ sandbox-data/*.local.json
 local-test/xampp/.credentials.local.json
 local-test/xampp/storage/
 local-test/staging/
+tools/catalog-onboarding/node_modules/
+tools/catalog-onboarding/.next/
+tools/catalog-onboarding/.env*.local
+tools/catalog-onboarding/data/batches/
+tools/catalog-onboarding/data/uploads/
+tools/catalog-onboarding/coverage/
+tools/catalog-onboarding/next-env.d.ts
+tools/catalog-onboarding/*.traineddata
 /backups/
 /scratch/
 *.sql.bak

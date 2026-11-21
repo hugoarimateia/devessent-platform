@@ -228,6 +228,7 @@ export function RetailOrdersTable({
                       {new Date(order.createdAt).toLocaleString("pt-BR", {
                         dateStyle: "short",
                         timeStyle: "short",
+                        timeZone: "America/Sao_Paulo",
                       })}
                       {order.itemCount !== undefined ? ` · ${order.itemCount} un` : ""}
                     </span>

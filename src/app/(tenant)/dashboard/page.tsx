@@ -750,7 +750,7 @@ export default async function DashboardPage() {
                             data-label="Ingresso"
                             className="py-3.5 px-5 text-right font-mono text-foreground-muted tabular-nums"
                           >
-                            {new Date(member.createdAt).toLocaleDateString("pt-BR")}
+                            {new Date(member.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                           </td>
                         </tr>
                       );
@@ -948,7 +948,7 @@ export default async function DashboardPage() {
                                 {event.actionLabel}
                               </span>
                               <span className="font-mono text-[10px] text-foreground-muted tabular-nums shrink-0">
-                                {new Date(event.createdAt).toLocaleDateString("pt-BR")}
+                                {new Date(event.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                               </span>
                             </div>
                             <p className="text-[11px] text-foreground-muted truncate">

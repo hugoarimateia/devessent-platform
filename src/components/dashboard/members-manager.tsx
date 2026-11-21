@@ -475,7 +475,9 @@ export function MembersManager({
                       data-label="Vínculo"
                       className="py-3.5 px-4 font-mono text-foreground-muted tabular-nums"
                     >
-                      {new Date(member.createdAt).toLocaleDateString("pt-BR")}
+                      {new Date(member.createdAt).toLocaleDateString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })}
                     </td>
                     {canManage && (
                       <td
@@ -635,7 +637,9 @@ export function MembersManager({
                         data-label="Validade"
                         className="py-3.5 px-4 font-mono text-foreground-muted tabular-nums"
                       >
-                        {new Date(inv.expiresAt).toLocaleDateString("pt-BR")}
+                        {new Date(inv.expiresAt).toLocaleDateString("pt-BR", {
+                          timeZone: "America/Sao_Paulo",
+                        })}
                       </td>
                       <td data-label="Ação" className="py-3.5 px-5 text-right">
                         {inv.status === "pending" ? (

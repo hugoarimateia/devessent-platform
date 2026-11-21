@@ -46,7 +46,11 @@ const simulatedMpStore =
   >());
 
 export function isSimulatedMercadoPagoToken(token: string): boolean {
-  return token.trim().startsWith("TEST-DEVESSENT-SANDBOX-");
+  const normalized = token.trim();
+  return (
+    normalized.startsWith("TEST-DEVESSENT-SANDBOX-") ||
+    normalized.startsWith("SANDBOX-DEMO-TOKEN-")
+  );
 }
 
 export function mapMercadoPagoStatus(

@@ -19,6 +19,7 @@ const eslintConfig = [
       ".open-next/**",
       ".vinext/**",
       "apps/**",
+      "tools/**",
       "node_modules/**",
     ],
   },

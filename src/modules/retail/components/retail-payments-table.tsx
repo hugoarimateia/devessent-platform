@@ -575,7 +575,9 @@ export function RetailPaymentsTable({
                       <td className="py-3.5 px-4 font-mono text-[11px] text-foreground-muted border-b border-surface-border whitespace-nowrap">
                         <div>{item.externalPaymentId || item.externalPreferenceId || "—"}</div>
                         <div className="text-[10px] opacity-75">
-                          {new Date(item.updatedAt).toLocaleString("pt-BR")}
+                          {new Date(item.updatedAt).toLocaleString("pt-BR", {
+                            timeZone: "America/Sao_Paulo",
+                          })}
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-right border-b border-surface-border whitespace-nowrap">

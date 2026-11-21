@@ -4,6 +4,7 @@ import { cache } from "react";
 import type { Database } from "@/types/database.types";
 import { env } from "@/lib/environment/env";
 import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import { isSecureCookieContext } from "@/lib/environment/cookie-options";
 
 function createXamppSupabaseGuard() {
   const throwGuard = (prop: string | symbol) => {
@@ -39,9 +40,14 @@ export const createClient = cache(async () => {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet: Array<{ name: string; value: string; options?: Parameters<typeof cookieStore.set>[2] }>) {
+          const secureCookie = isSecureCookieContext();
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, {
+                ...options,
+                secure: secureCookie,
+                sameSite: options?.sameSite ?? "lax",
+              })
             );
           } catch {
             // The `setAll` method was called from a Server Component.

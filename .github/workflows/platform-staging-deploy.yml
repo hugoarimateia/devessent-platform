@@ -55,9 +55,14 @@ jobs:
             exit 1
           fi
 
-          # Fail-closed: impedir categoricamente qualquer uso da conta Cloudflare do projeto EJC
-          if [ "$(echo "$CF_ACCOUNT_ID" | tr '[:upper:]' '[:lower:]')" = "0d0228f378b5e4f3f63c67b4210bf3ea" ]; then
+          # Fail-closed: impedir categoricamente a conta EJC e exigir exclusivamente a conta DevEssent autorizada
+          NORMALIZED_CF_ACCOUNT_ID="$(echo "$CF_ACCOUNT_ID" | tr '[:upper:]' '[:lower:]')"
+          if [ "$NORMALIZED_CF_ACCOUNT_ID" = "0d0228f378b5e4f3f63c67b4210bf3ea" ]; then
             echo "::error::BLOQUEIO CRÍTICO: CLOUDFLARE_ACCOUNT_ID corresponde à conta EJC. Deploy abortado."
+            exit 1
+          fi
+          if [ "$NORMALIZED_CF_ACCOUNT_ID" != "bf89f7f990af2c019abf8e7604db760d" ]; then
+            echo "::error::BLOQUEIO CRÍTICO: CLOUDFLARE_ACCOUNT_ID não corresponde à conta DevEssent autorizada (bf89f7f990af2c019abf8e7604db760d). Deploy abortado."
             exit 1
           fi
 

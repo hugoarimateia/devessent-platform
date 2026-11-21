@@ -21,9 +21,17 @@ enabled = false
 enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:3000/**",
   "http://localhost:3000/callback",
   "http://localhost:3000/auth/callback",
-  "http://localhost:3000/redefinir-senha"
+  "http://localhost:3000/redefinir-senha",
+  "http://127.0.0.1:3000/**",
+  "http://127.0.0.1:8787/**",
+  "https://devessent-platform-staging.devessent.workers.dev",
+  "https://devessent-platform-staging.devessent.workers.dev/**",
+  "https://devessent-platform-staging.devessent.workers.dev/auth/callback",
+  "https://devessent-platform-staging.devessent.workers.dev/redefinir-senha"
 ]
 jwt_expiry = 3600
 enable_signup = false

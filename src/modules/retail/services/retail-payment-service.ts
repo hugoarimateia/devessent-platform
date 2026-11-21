@@ -32,6 +32,7 @@ import {
 import {
   decryptPaymentSecret,
   encryptPaymentSecret,
+  isSimulatedMercadoPagoToken,
   MercadoPagoSandboxProvider,
   XamppSandboxPaymentProvider,
   buildMercadoPagoWebhookSignature,
@@ -1593,6 +1594,51 @@ export class RetailPaymentService {
       throw new UnauthorizedError(
         err instanceof Error ? err.message : "Assinatura de webhook inválida."
       );
+    }
+
+    // Em runtimes stateless (ex.: Cloudflare Workers), o armazenamento em memória do provedor
+    // sandbox sintético não persiste entre isolados. Quando o token é exclusivamente sintético
+    // de homologação e a assinatura HMAC-SHA256 já foi validada acima, hidratar os dados
+    // autoritativos a partir do registro persistido no PostgreSQL sem auto-aprovar pagamentos.
+    if (
+      decryptedConn.environment === "sandbox" &&
+      isSimulatedMercadoPagoToken(decryptedConn.accessToken) &&
+      !MercadoPagoSandboxProvider.getSimulatedTransaction(validatedEvent.externalPaymentId)
+    ) {
+      const { data: persistedPayment } = await admin
+        .from("retail_payments")
+        .select(
+          "amount_cents, currency, seller_account_id, external_preference_id, external_reference, status, payment_method"
+        )
+        .eq("id", targetPayment.id)
+        .eq("tenant_id", targetPayment.tenant_id)
+        .maybeSingle();
+
+      if (persistedPayment) {
+        const persistedStatus = persistedPayment.status as RetailPaymentStatus;
+        const safeStatelessStatus: RetailPaymentStatus =
+          persistedStatus === "paid" ||
+          persistedStatus === "refunded" ||
+          persistedStatus === "partially_refunded"
+            ? persistedStatus
+            : "processing";
+
+        MercadoPagoSandboxProvider.seedSimulatedTransaction({
+          externalPaymentId: validatedEvent.externalPaymentId,
+          externalPreferenceId: persistedPayment.external_preference_id ?? "MP-PREF-SBX-STATELESS",
+          externalReference: persistedPayment.external_reference,
+          sellerAccountId: persistedPayment.seller_account_id,
+          status: safeStatelessStatus,
+          amountCents: Number(persistedPayment.amount_cents),
+          refundedAmountCents: 0,
+          currency: persistedPayment.currency,
+          paymentMethod:
+            (persistedPayment.payment_method as RetailPayment["paymentMethod"]) || "hosted_checkout",
+          approvedAt: safeStatelessStatus === "paid" ? new Date().toISOString() : null,
+          failureCode: null,
+          failureReason: null,
+        });
+      }
     }
 
     const authoritativeTx = await provider.getTransaction({

@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 import { env } from "@/lib/environment/env";
+import { isSecureCookieContext } from "@/lib/environment/cookie-options";
 import {
   createMiddlewareAuthBridgeHeader,
   MW_AUTH_BRIDGE_HEADER,
@@ -51,6 +52,9 @@ export async function updateSession(request: NextRequest) {
     options?: Parameters<typeof supabaseResponse.cookies.set>[2];
   }> = [];
 
+  const secureCookie =
+    request.nextUrl.protocol === "https:" || isSecureCookieContext();
+
   const supabase = createServerClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -66,8 +70,15 @@ export async function updateSession(request: NextRequest) {
             options?: Parameters<typeof supabaseResponse.cookies.set>[2];
           }>
         ) {
-          pendingCookies = cookiesToSet;
-          cookiesToSet.forEach(({ name, value }) =>
+          pendingCookies = cookiesToSet.map((c) => ({
+            ...c,
+            options: {
+              ...c.options,
+              secure: secureCookie,
+              sameSite: c.options?.sameSite ?? "lax",
+            },
+          }));
+          pendingCookies.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
@@ -75,7 +86,7 @@ export async function updateSession(request: NextRequest) {
               headers: cleanHeaders,
             },
           });
-          cookiesToSet.forEach(({ name, value, options }) =>
+          pendingCookies.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
         },

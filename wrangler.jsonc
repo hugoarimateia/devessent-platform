@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "devessent-platform-staging",
+  "account_id": "bf89f7f990af2c019abf8e7604db760d",
   "compatibility_date": "2026-08-04",
   "compatibility_flags": ["nodejs_compat"],
   "main": "vinext/server/fetch-handler",
@@ -15,6 +16,7 @@
   "vars": {
     "APP_BACKEND_MODE": "supabase",
     "NEXT_PUBLIC_APP_ENV": "staging",
+    "NEXT_PUBLIC_APP_URL": "https://devessent-platform-staging.devessent.workers.dev",
     "NEXT_PUBLIC_SUPABASE_URL": "https://auebnppzxcvtaaqqlbts.supabase.co"
   }
 }

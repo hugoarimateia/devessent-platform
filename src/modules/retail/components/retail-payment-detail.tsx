@@ -513,7 +513,11 @@ export function RetailPaymentDetail({
                   <div className="font-semibold text-foreground">
                     {ProductInvariants.formatCentsToCurrency(att.amountCents, att.currency)}
                   </div>
-                  <div>{new Date(att.createdAt).toLocaleString("pt-BR")}</div>
+                  <div>
+                    {new Date(att.createdAt).toLocaleString("pt-BR", {
+                      timeZone: "America/Sao_Paulo",
+                    })}
+                  </div>
                 </div>
               </div>
             ))}
@@ -570,7 +574,9 @@ export function RetailPaymentDetail({
                 <div className="text-right text-[11px] text-foreground-muted shrink-0">
                   <div className="inline-flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    {new Date(evt.createdAt).toLocaleString("pt-BR")}
+                    {new Date(evt.createdAt).toLocaleString("pt-BR", {
+                      timeZone: "America/Sao_Paulo",
+                    })}
                   </div>
                 </div>
               </div>

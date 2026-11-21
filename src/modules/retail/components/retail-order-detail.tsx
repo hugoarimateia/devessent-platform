@@ -254,7 +254,11 @@ export function RetailOrderDetail({
             )}
           </div>
           <p className="text-xs text-foreground-muted">
-            Registrado em {new Date(order.createdAt).toLocaleString("pt-BR")} · Canal{" "}
+            Registrado em{" "}
+            {new Date(order.createdAt).toLocaleString("pt-BR", {
+              timeZone: "America/Sao_Paulo",
+            })}{" "}
+            · Canal{" "}
             {order.channel === "storefront" ? "Vitrine Pública" : "Operação Manual"}
           </p>
         </div>
@@ -417,7 +421,9 @@ export function RetailOrderDetail({
                           {entry.changedByNameSnapshot || "Sistema"}
                         </span>
                         <span>
-                          {new Date(entry.createdAt).toLocaleString("pt-BR")}
+                          {new Date(entry.createdAt).toLocaleString("pt-BR", {
+                            timeZone: "America/Sao_Paulo",
+                          })}
                         </span>
                       </div>
                     </li>

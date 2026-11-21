@@ -263,7 +263,7 @@ export default async function AdminGlobalPage() {
                         data-label="Cadastro"
                         className="py-3.5 px-5 font-mono text-foreground-muted tabular-nums text-right"
                       >
-                        {new Date(tenant.created_at).toLocaleDateString("pt-BR")}
+                        {new Date(tenant.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                       </td>
                     </tr>
                   ))}
@@ -315,7 +315,7 @@ export default async function AdminGlobalPage() {
                             </p>
                           </div>
                           <span className="font-mono text-[10px] text-foreground-muted tabular-nums shrink-0 mt-0.5">
-                            {new Date(event.createdAt).toLocaleDateString("pt-BR")}
+                            {new Date(event.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                           </span>
                         </div>
                       </li>

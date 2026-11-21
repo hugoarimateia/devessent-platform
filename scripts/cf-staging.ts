@@ -8,6 +8,7 @@
  * - Valida estritamente o projeto Supabase Cloud Staging autorizado (`auebnppzxcvtaaqqlbts`).
  */
 import { spawn } from "child_process";
+import * as crypto from "crypto";
 import { createRequire } from "module";
 import * as fs from "fs";
 import * as path from "path";
@@ -28,16 +29,20 @@ const generatedWranglerPath = path.join(distServerDir, "wrangler.json");
 const generatedDevVarsPath = path.join(distServerDir, ".dev.vars");
 
 const WORKER_UNCOMPRESSED_LIMIT_BYTES = 64 * 1024 * 1024; // 64 MiB Cloudflare Workers Free & Paid
+const AUTHORIZED_CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"; // Conta DevEssent (devessent@outlook.com)
 const FORBIDDEN_CLOUDFLARE_ACCOUNT_IDS = new Set([
   "0d0228f378b5e4f3f63c67b4210bf3ea", // Conta Cloudflare EJC — estritamente proibida para DevEssent Platform
 ]);
+const FORBIDDEN_CLOUDFLARE_EMAILS = new Set([
+  "hugogeeta.gamer@gmail.com", // E-mail da conta Cloudflare EJC — proibido
+]);
 const EXPECTED_STAGING_WORKER_NAME = "devessent-platform-staging";
 
-type Subcommand = "build" | "preview" | "verify-bundle" | "deploy";
+type Subcommand = "build" | "preview" | "verify-bundle" | "sync-secrets" | "deploy";
 const subcommand = (process.argv[2] || "") as Subcommand;
 
-if (!["build", "preview", "verify-bundle", "deploy"].includes(subcommand)) {
-  console.error("Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|deploy]");
+if (!["build", "preview", "verify-bundle", "sync-secrets", "deploy"].includes(subcommand)) {
+  console.error("Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|sync-secrets|deploy]");
   process.exit(1);
 }
 
@@ -65,7 +70,7 @@ function resolveStagingBuildPublicEnv(): BuildPublicEnv {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || "";
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    "https://devessent-platform-staging.workers.dev";
+    "https://devessent-platform-staging.devessent.workers.dev";
   const appEnv = process.env.NEXT_PUBLIC_APP_ENV?.trim() || "staging";
 
   if (appEnv !== "staging") {
@@ -340,41 +345,28 @@ async function runPreview(): Promise<void> {
   });
 }
 
-async function runDeploy(): Promise<void> {
-  verifyBuiltBundle();
-
-  const generatedConfig = JSON.parse(
-    fs.readFileSync(generatedWranglerPath, "utf-8")
-  ) as { name?: string };
-  if (generatedConfig.name !== EXPECTED_STAGING_WORKER_NAME) {
-    throw new Error(
-      `BLOQUEIO DE SEGURANÇA: Worker alvo inválido ("${generatedConfig.name}"). Esperado exclusivamente "${EXPECTED_STAGING_WORKER_NAME}".`
-    );
-  }
-
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim().toLowerCase() || "";
-  if (accountId && FORBIDDEN_CLOUDFLARE_ACCOUNT_IDS.has(accountId)) {
-    throw new Error(
-      "BLOQUEIO CRÍTICO (Fail-Closed): CLOUDFLARE_ACCOUNT_ID pertence à conta EJC. Deploy da DevEssent Platform proibido nessa conta."
-    );
-  }
-
-  const pub = resolveStagingBuildPublicEnv();
-  if (
-    pub.appUrl.includes("app.devessent.com.br") ||
-    pub.appUrl.includes("devessent-landing.pages.dev")
-  ) {
-    throw new Error(
-      `BLOQUEIO DE AMBIENTE: NEXT_PUBLIC_APP_URL inválida para staging Workers ("${pub.appUrl}").`
-    );
-  }
-
-  const wranglerBin = path.join(
+function getWranglerBin(): string {
+  return path.join(
     path.dirname(require.resolve("wrangler/package.json")),
     "bin/wrangler.js"
   );
+}
 
-  // Verificação Fail-Closed da conta autenticada antes de qualquer upload
+async function assertAuthorizedCloudflareAccount(wranglerBin: string): Promise<void> {
+  const envAccountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim().toLowerCase() || "";
+  if (envAccountId) {
+    if (FORBIDDEN_CLOUDFLARE_ACCOUNT_IDS.has(envAccountId)) {
+      throw new Error(
+        "BLOQUEIO CRÍTICO (Fail-Closed): CLOUDFLARE_ACCOUNT_ID pertence à conta EJC. Operação proibida nessa conta."
+      );
+    }
+    if (envAccountId !== AUTHORIZED_CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error(
+        `BLOQUEIO CRÍTICO (Fail-Closed): CLOUDFLARE_ACCOUNT_ID ("${envAccountId}") difere da conta DevEssent autorizada ("${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID}").`
+      );
+    }
+  }
+
   const whoamiOutput = await new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
     const child = spawn(process.execPath, [wranglerBin, "whoami"], {
@@ -388,20 +380,136 @@ async function runDeploy(): Promise<void> {
   });
 
   const whoamiLower = whoamiOutput.toLowerCase();
-  for (const forbiddenId of FORBIDDEN_CLOUDFLARE_ACCOUNT_IDS) {
-    if (whoamiLower.includes(forbiddenId)) {
-      throw new Error(
-        `BLOQUEIO CRÍTICO (Fail-Closed): Sessão Wrangler autenticada na conta EJC (${forbiddenId}). Faça login na conta DevEssent ou configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID da DevEssent.`
-      );
-    }
-  }
   if (whoamiLower.includes("not authenticated") || whoamiLower.includes("you are not authenticated")) {
     throw new Error(
       "Sessão Wrangler não autenticada. Autentique a conta DevEssent (`wrangler login` ou CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID)."
     );
   }
 
+  for (const forbiddenId of FORBIDDEN_CLOUDFLARE_ACCOUNT_IDS) {
+    if (whoamiLower.includes(forbiddenId)) {
+      throw new Error(
+        `BLOQUEIO CRÍTICO (Fail-Closed): Sessão Wrangler contém a conta EJC proibida (${forbiddenId}). Operação abortada.`
+      );
+    }
+  }
+  for (const forbiddenEmail of FORBIDDEN_CLOUDFLARE_EMAILS) {
+    if (whoamiLower.includes(forbiddenEmail)) {
+      throw new Error(
+        `BLOQUEIO CRÍTICO (Fail-Closed): Sessão Wrangler associada ao e-mail EJC proibido (${forbiddenEmail}). Operação abortada.`
+      );
+    }
+  }
+
+  if (!whoamiLower.includes(AUTHORIZED_CLOUDFLARE_ACCOUNT_ID)) {
+    throw new Error(
+      `BLOQUEIO CRÍTICO (Fail-Closed): Conta DevEssent autorizada (${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID}) não confirmada em \`wrangler whoami\`. Operação abortada.`
+    );
+  }
+}
+
+async function runSyncSecrets(): Promise<void> {
+  const wranglerBin = getWranglerBin();
+  await assertAuthorizedCloudflareAccount(wranglerBin);
+
+  const validated = loadAndValidateStagingEnv({ requireServiceRole: true });
+  const paymentEncryptionKey =
+    validated.paymentEncryptionKey ||
+    validated.rawVars.PAYMENT_CREDENTIALS_ENCRYPTION_KEY?.trim() ||
+    "";
+
+  if (!paymentEncryptionKey || paymentEncryptionKey.length < 32) {
+    throw new Error(
+      "BLOQUEIO DE COMPATIBILIDADE FINANCEIRA: PAYMENT_CREDENTIALS_ENCRYPTION_KEY ausente ou curta em .env.staging.local. Não é permitido sobrescrever/rotacionar a chave sem migração dos dados sandbox existentes."
+    );
+  }
+
+  const authBridgeSecret =
+    validated.rawVars.AUTH_BRIDGE_SECRET?.trim() ||
+    crypto.randomBytes(32).toString("hex");
+
+  const secretPayload = {
+    SUPABASE_SERVICE_ROLE_KEY: validated.serviceRoleKey,
+    AUTH_BRIDGE_SECRET: authBridgeSecret,
+    PAYMENT_CREDENTIALS_ENCRYPTION_KEY: paymentEncryptionKey,
+  };
+
+  console.log("🔐 DevEssent Platform — Sincronização Segura de Cloudflare Secrets (STAGING)");
+  console.log(`   Conta CF    : ${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID} (DevEssent verificada)`);
+  console.log(`   Worker alvo : ${EXPECTED_STAGING_WORKER_NAME}`);
+  console.log("   Chaves      : SUPABASE_SERVICE_ROLE_KEY, AUTH_BRIDGE_SECRET, PAYMENT_CREDENTIALS_ENCRYPTION_KEY");
+  console.log("   Sigilo      : envio direto por stdin (zero arquivos temporários, zero impressão de valores)");
+
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        wranglerBin,
+        "secret",
+        "bulk",
+        "--name",
+        EXPECTED_STAGING_WORKER_NAME,
+      ],
+      {
+        stdio: ["pipe", "inherit", "inherit"],
+        env: {
+          ...process.env,
+          CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
+          WRANGLER_SEND_METRICS: "false",
+        },
+      }
+    );
+    child.on("error", reject);
+    child.on("exit", (code) => resolve(code ?? 1));
+    child.stdin.write(JSON.stringify(secretPayload));
+    child.stdin.end();
+  });
+
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
+
+  console.log("✅ Segredos configurados exclusivamente no Worker de Staging.");
+}
+
+async function runDeploy(): Promise<void> {
+  verifyBuiltBundle();
+
+  const generatedConfig = JSON.parse(
+    fs.readFileSync(generatedWranglerPath, "utf-8")
+  ) as { name?: string; account_id?: string };
+  if (generatedConfig.name !== EXPECTED_STAGING_WORKER_NAME) {
+    throw new Error(
+      `BLOQUEIO DE SEGURANÇA: Worker alvo inválido ("${generatedConfig.name}"). Esperado exclusivamente "${EXPECTED_STAGING_WORKER_NAME}".`
+    );
+  }
+  if (
+    generatedConfig.account_id &&
+    generatedConfig.account_id.toLowerCase() !== AUTHORIZED_CLOUDFLARE_ACCOUNT_ID
+  ) {
+    throw new Error(
+      `BLOQUEIO DE SEGURANÇA: account_id no artefato ("${generatedConfig.account_id}") difere da conta DevEssent autorizada ("${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID}").`
+    );
+  }
+
+  const pub = resolveStagingBuildPublicEnv();
+  if (
+    !pub.appUrl.startsWith("https://") ||
+    pub.appUrl.includes("localhost") ||
+    pub.appUrl.includes("127.0.0.1") ||
+    pub.appUrl.includes("app.devessent.com.br") ||
+    pub.appUrl.includes("devessent-landing.pages.dev")
+  ) {
+    throw new Error(
+      `BLOQUEIO DE AMBIENTE: NEXT_PUBLIC_APP_URL inválida para deploy remoto de staging Workers ("${pub.appUrl}"). Informe explicitamente a URL HTTPS do Worker de staging.`
+    );
+  }
+
+  const wranglerBin = getWranglerBin();
+  await assertAuthorizedCloudflareAccount(wranglerBin);
+
   console.log("🚀 DevEssent Platform — Deploy Seguro Cloudflare Workers (STAGING)");
+  console.log(`   Conta CF    : ${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID} (DevEssent verificada)`);
   console.log(`   Worker alvo : ${EXPECTED_STAGING_WORKER_NAME}`);
   console.log(`   Supabase    : ${pub.supabaseHost} (${AUTHORIZED_STAGING_PROJECT_REF})`);
   console.log(`   App URL     : ${pub.appUrl}`);
@@ -423,6 +531,7 @@ async function runDeploy(): Promise<void> {
       stdio: "inherit",
       env: {
         ...process.env,
+        CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
         WRANGLER_SEND_METRICS: "false",
       },
     });
@@ -443,6 +552,8 @@ async function runDeploy(): Promise<void> {
       verifyBuiltBundle();
     } else if (subcommand === "preview") {
       await runPreview();
+    } else if (subcommand === "sync-secrets") {
+      await runSyncSecrets();
     } else if (subcommand === "deploy") {
       await runDeploy();
     }
