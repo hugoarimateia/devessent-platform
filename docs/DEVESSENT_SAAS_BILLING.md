@@ -221,10 +221,14 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 ## 18. Segurança e Performance no Cloudflare Workers
 
-- **Segredos isolados no servidor:** `BILLING_MP_ACCESS_TOKEN` e `BILLING_MP_WEBHOOK_SECRET` são exclusivamente segredos de runtime (nunca enviados ao navegador nem versionados no Git).
+- **Segredos exclusivos e obrigatórios no servidor (fail-closed — Fase 6E.2B):**
+  - No modo `internal_sandbox_simulator`: exige exclusivamente `BILLING_WEBHOOK_SANDBOX_SECRET` (≥ 32 caracteres de alta entropia), rejeitando *fail-closed* qualquer ausência, padrão previsível ou reutilização de `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_BRIDGE_SECRET` ou `PAYMENT_CREDENTIALS_ENCRYPTION_KEY`.
+  - No modo `official_sandbox_api`: exige `BILLING_MP_ACCESS_TOKEN` (`TEST-...`) + `BILLING_MP_WEBHOOK_SECRET` (≥ 16 caracteres), bloqueando *fail-closed* tokens de produção (`APP_USR-*`) e desabilitando automaticamente o simulador interno de cobranças.
+  - Endpoints de simulação de cobrança são restritos exclusivamente a `platform_admin` em ambiente não-produtivo (`staging`/`development`) e nunca aceitam provedores arbitrários na rota pública `/api/webhooks/billing/[provider]` (restrita exclusivamente a `mercado_pago`).
+  - Todo evento persistido em `billing_webhook_events.payload_summary` e `audit_logs.metadata` grava explicitamente `providerOrigin` (`internal_sandbox_simulator` vs `mercado_pago_official_sandbox`).
 - **Zero impacto nas demais páginas da plataforma:** `resolveWorkspaceSession()` permanece intocado — nenhuma consulta Billing é executada em `/dashboard`, `/dashboard/retail/**`, `/loja/**` ou `/admin`.
 - **Pré-busca paralela RLS-enforced:** `/dashboard/assinatura` utiliza `getActiveTenantHintUuid()` em paralelo com `resolveWorkspaceSession()`, preservando as otimizações das Fases 6D.2 e 6E.1.
-- **Impacto de bundle Workers (`vinext`):** `+0,16 MiB` descomprimido (`2,44 → 2,60 MiB`, `4,1%` do limite de `64 MiB`) e `+0,04 MiB` gzip-9 (`0,72 → 0,76 MiB`).
+- **Impacto de bundle Workers (`vinext`):** `2,60 MiB` descomprimido (`4,1%` do limite de `64 MiB`), **`663,42 KiB` gzip no upload Cloudflare** (`0,65 MiB` vs limite de `3 MiB` do plano Free) e **startup time de `16 ms`**.
 
 ---
 
@@ -232,7 +236,7 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 | Item | Custo Atual (Staging / MVP) | Custo Futuro Estimado (Produção) |
 |---|---|---|
-| Supabase Staging + Cloudflare Workers Free | **R$ 0,00** | Conforme plano escolhido pela DevEssent |
+| Supabase Staging + Cloudflare Workers Free | **R$ 0,00** | Conforme plano escolhido pela DevEssent (recomenda-se Workers Paid `$5/mês` se tráfego/CPU escalar) |
 | Simulador interno Sandbox e contratos 50/50 | **R$ 0,00** | **R$ 0,00** (controle administrativo nativo) |
 | Cartão de Crédito Recorrente (Mercado Pago) | **R$ 0,00** (sandbox) | Tarifa MDR típica de mercado (~1,5% a 4,98% conforme tabela PJ vigente do provedor) |
 | Pix Automático (futuro) | Não ativado | Tarifa fixa/percentual PJ reduzida conforme contrato com o provedor |
@@ -243,26 +247,79 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 | Camada de Teste | Status | Escopo Verificado |
 |---|---|---|
-| **1. Testes Unitários (`tests/unit/billing/billing-domain-and-security.test.ts` + suíte completa)** | **PASS (22/22 arquivos · 119/119 testes)** | Divisão 50/50 em inteiros (inclusive valores ímpares), MRR, bloqueio fail-closed `APP_USR-`/live, prontidão de início agendado, matriz RBAC, magic bytes de comprovante PDF/PNG e HMAC-SHA256 |
-| **2. Testes de Integração Real PostgreSQL/RLS (`tests/integration/billing-supabase-security.test.ts`)** | **PASS (2/2 contra `auebnppzxcvtaaqqlbts`)** | Isolamento RLS entre `Ateliê` e `Verde`, bloqueio de `manager`/`staff` (0 linhas), bloqueio de UPDATE direto por `owner`, bloqueio de RPC por `owner`, idempotência de webhook (`duplicate`), inadimplência `past_due` com `tenants.status = active`, confirmação única 50/50 |
-| **3. Testes E2E + Webhooks + Storage em Runtime Cloudflare Workers local (`workerd` / `pnpm cf:preview:staging`)** | **PASS (0 pageErrors · 0 HTTP 5xx)** | Criação de planos via UI, proteção de preço em assinaturas existentes, vinculação de empresa, autorização pelo Owner em `/dashboard/assinatura`, confirmação de ativação, webhook inválido (`401`), `live_mode: true` (`401`), webhook pago (`200 processed`), webhook repetido (`200 duplicate`), atraso sem suspender vitrine (`200`), atualização de cartão + regularização (`active`), contrato 50/50 com upload de PDF real em `billing-receipts` (`receipt_attached` → `confirmed`), entrega, bloqueio RBAC de `owner` em `/admin/comercial` e `manager` em `/dashboard/assinatura` |
-| **4. Cloudflare Workers Staging remoto (`devessent-platform-staging`)** | **Build & Bundle verificados (`2,60 MiB` / `0,76 MiB` gzip); deploy controlado aguardando revisão da branch `feat/saas-billing-subscriptions`** | Mantido o Staging remoto estável em `6ba6c41` conforme regra de deploy controlado (§15) |
-| **5. API Oficial Mercado Pago Sandbox (externa)** | **PENDENTE (credenciais `BILLING_MP_ACCESS_TOKEN` / `BILLING_MP_WEBHOOK_SECRET` da conta DevEssent não configuradas)** | Adaptador pronto; homologação externa marcada explicitamente como pendente até provisionamento das credenciais de teste da conta DevEssent |
+| **1. Testes Unitários (`tests/unit/` incluindo `billing-domain-and-security.test.ts`)** | **PASS (22/22 arquivos · 120/120 testes)** | Divisão 50/50 em inteiros (inclusive valores ímpares), MRR, bloqueio fail-closed `APP_USR-`/live, segredo exclusivo obrigatório sem fallback previsível ou reuso, prontidão de início agendado, matriz RBAC, magic bytes PDF/PNG e HMAC-SHA256 |
+| **2. Testes de Integração Real PostgreSQL/RLS (`billing-supabase-security.test.ts` + `retail-payments-supabase-staging.test.ts`)** | **PASS (2/2 suítes · 6/6 testes contra `auebnppzxcvtaaqqlbts`)** | Isolamento RLS entre `Ateliê` e `Verde`, bloqueio de `manager`/`staff` (0 linhas), bloqueio de UPDATE/RPC por `owner`, idempotência (`duplicate`), `past_due` com `tenants.status = active`, confirmação única 50/50 e ausência total de regressão no Retail Payments |
+| **3. Homologação Online HTTPS em Cloudflare Workers Staging (`https://devessent-platform-staging.devessent.workers.dev`)** | **PASS (`0 pageErrors` · `0 HTTP 5xx` · `193/193 ok` no `wrangler tail`)** | Planos, assinaturas, marco de ativação, autorização pelo Owner, webhooks HMAC (`400` provider inválido, `401` assinatura forjada, `401` `live_mode=true`, `200 processed` `subscription_preapproval`, `200 processed` `paid`, `200 duplicate` replay, `200 ignored_out_of_order`, `past_due` com vitrine `/loja/atelie-demonstrativo` retornando `200 OK`, troca de cartão + regularização `active`, `providerOrigin` explícito), contrato 50/50 com upload privado (`receipt_attached` → `confirmed` → entrega → `completed`, leitura pública bloqueada `400`), cancelamento agendado, 13 registros de auditoria (11 ações distintas), bloqueio RBAC (`owner_verde`, `manager`, `staff`), Retail 100% intocado e limpeza integral ao final |
+| **4. API Oficial Mercado Pago Sandbox (externa)** | **PENDENTE (credenciais `BILLING_MP_ACCESS_TOKEN` / `BILLING_MP_WEBHOOK_SECRET` da conta DevEssent ainda não provisionadas)** | Adaptador `official_sandbox_api` pronto (incluindo link de autorização externa no painel Owner e reconciliação de `subscription_preapproval`); homologação externa aguarda criação da aplicação Developers pelo proprietário da conta DevEssent |
 
 ---
 
 ## 21. Limitações Conhecidas do Sandbox
 
-- Sem credenciais de teste da conta Mercado Pago da DevEssent configuradas em secrets, a recorrência opera no **Simulador Interno Sandbox** (exercitando integralmente HMAC-SHA256, RPCs PostgreSQL, idempotência e telas, porém sem tráfego HTTP real para `api.mercadopago.com`).
-- Mesmo com credenciais Sandbox oficiais do Mercado Pago, o ambiente Sandbox do provedor utiliza cartões de teste específicos e não reproduz integralmente regras antifraude nem cobranças agendadas em tempo real de 30 dias (usando simulador de webhooks do painel de desenvolvedores).
+- Sem credenciais de teste da conta Mercado Pago da DevEssent configuradas nos secrets do Worker, a recorrência opera no **Simulador Interno Sandbox** com segredo HMAC exclusivo (`BILLING_WEBHOOK_SANDBOX_SECRET`), exercitando integralmente HMAC-SHA256, reconciliação PostgreSQL, idempotência, proteção fora de ordem e telas online, porém sem tráfego HTTP real para `api.mercadopago.com`.
+- **Requisitos e limitações oficiais do Mercado Pago Sandbox (`/preapproval`):**
+  - Uma credencial `TEST-...` **não basta sozinha** para homologar uma assinatura completa: é obrigatório criar duas **Contas de Teste** no painel Mercado Pago Developers (1 Vendedor/Collector DevEssent Sandbox + 1 Comprador/Payer Sandbox) e utilizar o e-mail `test_user_...@testuser.com` do comprador de teste como `payer_email` (e-mails reais ou `@devessent-demo.com` geram erro de ambiente misto).
+  - O ambiente Sandbox do Mercado Pago não acelera ciclos mensais no relógio em tempo real (ciclos subsequentes dependem do Simulador de Webhooks do painel de desenvolvedores ou de `start_date` próximo).
+  - A régua interna de retentativas do Mercado Pago (até 3 tentativas automáticas antes de cancelamento automático pelo gateway) não é customizável via API.
 - Pix Automático permanece preparado estruturalmente (`pix_automatic_future`), sem ativação automática enquanto não houver homologação oficial na conta PJ do provedor.
 
 ---
 
 ## 22. Pendências para Produção
 
-1. Provisionar credenciais Sandbox oficiais da conta **DevEssent** no Mercado Pago (`BILLING_MP_ACCESS_TOKEN=TEST-...` e `BILLING_MP_WEBHOOK_SECRET`) e homologar eventos reais `subscription_preapproval` e `subscription_authorized_payment` apontando para `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`.
+1. Criar a aplicação Mercado Pago Developers da **DevEssent** (com Contas de Teste Vendedor + Comprador), configurar `BILLING_MP_ACCESS_TOKEN` (`TEST-...`) e `BILLING_MP_WEBHOOK_SECRET` via `wrangler secret put` no Worker `devessent-platform-staging` (sem jamais enviar chaves por chat) e homologar eventos externos reais `subscription_preapproval` e `subscription_authorized_payment` na URL `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`.
 2. Definir tabela definitiva de planos comerciais, termos jurídicos de contratação, política formal de tolerância/inadimplência e regras de cancelamento da DevEssent.
 3. Configurar canal oficial de e-mail transacional (com consentimento e SPF/DKIM) para consumir `billing_notifications_queue` em produção.
-4. Após homologação financeira completa em Staging, habilitar o deploy da branch `feat/saas-billing-subscriptions`, configurar segredos de produção em conta/Worker dedicado e somente então liberar a flag explícita de cobrança real.
-5. Em fase futura separada, executar o onboarding financeiro individual dos estabelecimentos para o Fluxo A (Retail Payments).
+4. Avaliar contratação do plano Cloudflare Workers Paid (`$5/mês`) para o ambiente de Produção caso o pico de CPU em páginas RSC concorrentes exija folga acima do plano Free.
+5. Após homologação financeira completa em Staging, aprovar revisão/merge do PR `feat/saas-billing-subscriptions`, configurar ambiente e segredos de produção dedicados e somente então habilitar cobranças live de forma controlada.
+6. Em fase futura separada, executar o onboarding financeiro individual dos estabelecimentos para o Fluxo A (Retail Payments).
+
+---
+
+## 23. Homologação Online em Staging — Fase 6E.2B
+
+### 23.1 Estado do Deploy Controlado
+
+- **Branch:** `feat/saas-billing-subscriptions`
+- **Commit implantado:** `fcdda16` (`fcdda162d5d96b565d5031978534e0259a89471a`, ancestral direto de `2334f51` e `6ba6c41`)
+- **Conta Cloudflare verificada:** `bf89f7f990af2c019abf8e7604db760d` (`devessent@outlook.com`, perfil `devessent`; conta EJC bloqueada *fail-closed*)
+- **Worker:** `devessent-platform-staging` · **URL HTTPS:** `https://devessent-platform-staging.devessent.workers.dev`
+- **Versão ativa:** `7c984c38-4e8d-4b9d-b093-889ab10222c4`
+- **Ponto de rollback preservado (Fase 6E.1 · `6ba6c41`):** `9d82b763-dc9c-4308-b966-4ed72ba0a028` (`wrangler rollback 9d82b763-dc9c-4308-b966-4ed72ba0a028`)
+- **Cloudflare Secrets configurados (apenas nomes):** `AUTH_BRIDGE_SECRET`, `BILLING_WEBHOOK_SANDBOX_SECRET`, `PAYMENT_CREDENTIALS_ENCRYPTION_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+### 23.2 Comparativo de Performance Online & Telemetria Cloudflare Workers
+
+Medições executadas online em `https://devessent-platform-staging.devessent.workers.dev` em condições equivalentes (Playwright, 1 warm-up + 7 amostras full-reload `networkidle` + 6 transições SPA via sidebar + telemetria real `wrangler tail --format json` em 193 invocações):
+
+| Rota | Reload Online 6E.1 (`6ba6c41`) p50 / p95 | Reload Online 6E.2B (`fcdda16`) p50 / p95 | Navegação SPA 6E.2B p50 / p95 | Edge `wrangler tail` CPU p50 / Wall p50 | Status |
+|---|---|---|---|---|---|
+| `/dashboard` | `869 ms` / `919 ms` | `898 ms` / `1091 ms` | `307 ms` / `348 ms` | `18 ms` / `103 ms` (`22/22 ok`) | Sem regressão |
+| `/dashboard/retail` | `847 ms` / `901 ms` | `836 ms` / `919 ms` | `262 ms` / `319 ms` | `23 ms` / `98 ms` (`6/6 ok`) | Sem regressão |
+| `/dashboard/assinatura` | *(nova)* | `826 ms` / `908 ms` | `247 ms` / `268 ms` | `30 ms` / `122 ms` (`15/15 ok`) | Ótima (prefetch paralelo RLS) |
+| `/admin/comercial` | *(nova)* | `846 ms` / `978 ms` | `383 ms` / `513 ms` | `29 ms` / `139 ms` (`24/24 ok`) | Ótima |
+| `/api/webhooks/billing/mercado_pago` | *(nova)* | — | — | `14 ms` / `120 ms` (`16/16 ok`) | Ótima |
+
+- **Telemetria Global (`wrangler tail`):** `193/193` invocações com `outcome: "ok"`, **`0` exceções**, **`0` `exceededCpu`**, **`0` `exceededMemory`**, CPU global p50 `15 ms` / p95 `77 ms`, Wall Time global p50 `64 ms` / p95 `351 ms`, startup `16 ms`, upload gzip `663,42 KiB`.
+
+### 23.3 Guia Manual para Ativação das Credenciais Oficiais Mercado Pago Sandbox
+
+> **Regra de sigilo:** jamais envie tokens, chaves ou senhas por mensagens de chat ou commits Git. Configure os segredos diretamente no terminal local autenticado com o perfil `devessent`.
+
+1. **Acessar o Portal Mercado Pago Developers (conta da DevEssent):** entre em `https://www.mercadopago.com.br/developers/panel/app` com a conta oficial da DevEssent e clique em **Criar aplicação** (tipo *Pagamentos online* / *Checkout API e Assinaturas*, nome sugerido `DevEssent Platform Billing Staging`).
+2. **Criar duas Contas de Teste (*Suas integrações → Contas de teste*):**
+   - **Conta Vendedor de Teste (Collector — DevEssent Sandbox):** anote o e-mail/senha de teste; acesse o painel Developers com essa conta de teste (ou utilize as *Credenciais de teste* da aplicação) para obter o **Access Token de Teste (`TEST-...`)**.
+   - **Conta Comprador de Teste (Payer — Lojista Sandbox):** anote o e-mail `test_user_...@testuser.com` e senha. Esse e-mail deverá ser usado no fluxo de consentimento do `init_point` com os cartões de teste oficiais do Mercado Pago.
+3. **Configurar o Webhook oficial em Modo Teste (*Webhooks → Configurar notificações → Modo de teste*):**
+   - **URL de teste:** `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`
+   - **Eventos selecionados:** marcar **Planos e assinaturas** (`subscription_preapproval` e `subscription_authorized_payment`).
+   - Salvar e copiar a **Assinatura secreta** gerada pelo Mercado Pago para o ambiente de teste.
+4. **Configurar os Secrets diretamente no Worker de Staging (PowerShell local, conta DevEssent):**
+   ```powershell
+   $env:CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"
+   npx wrangler secret put BILLING_MP_ACCESS_TOKEN --name devessent-platform-staging
+   npx wrangler secret put BILLING_MP_WEBHOOK_SECRET --name devessent-platform-staging
+   ```
+5. **Validação imediata após configurar os secrets:**
+   - Acesse `https://devessent-platform-staging.devessent.workers.dev/admin/comercial` e confirme que o selo do provedor mudou automaticamente para **`Mercado Pago Assinaturas (API Sandbox)`** (desabilitando automaticamente os botões do simulador interno).
+   - Vincule uma empresa demonstrativa a um plano de teste, abra o link **`Autorizar no Mercado Pago (Sandbox)`** em `/dashboard/assinatura` logado na Conta Comprador de Teste, conclua o consentimento com cartão de teste do Mercado Pago e acompanhe a chegada real dos webhooks `subscription_preapproval` e `subscription_authorized_payment` com `providerOrigin = "mercado_pago_official_sandbox"`.
