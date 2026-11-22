@@ -66,19 +66,67 @@ function mapMpPreapprovalStatus(mpStatus: string | undefined): BillingSubscripti
   return "awaiting_authorization";
 }
 
+const MIN_SIMULATOR_SECRET_LENGTH = 32;
+const MIN_OFFICIAL_WEBHOOK_SECRET_LENGTH = 16;
+const PREDICTABLE_SECRET_FRAGMENTS = [
+  "devessent-billing-sandbox-local",
+  "changeme",
+  "default-secret",
+  "test-secret",
+  "secret123",
+  "password",
+  "12345678",
+];
+
+function assertStrongExclusiveSecret(
+  candidate: string,
+  minLen: number,
+  envVarName: string
+): void {
+  const trimmed = candidate.trim();
+  if (!trimmed || trimmed.length < minLen) {
+    throw new ForbiddenError(
+      `FAIL-CLOSED: ${envVarName} obrigatório e exclusivo para Billing SaaS (mínimo ${minLen} caracteres). Nenhum fallback previsível é permitido.`
+    );
+  }
+  const lower = trimmed.toLowerCase();
+  if (PREDICTABLE_SECRET_FRAGMENTS.some((frag) => lower.includes(frag))) {
+    throw new ForbiddenError(
+      `FAIL-CLOSED: ${envVarName} contém padrão previsível rejeitado pela política de segurança.`
+    );
+  }
+
+  // Nunca permitir reutilização de segredos de outros módulos (Auth / Service Role / Retail Payments)
+  const forbiddenSharedSecrets = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+    process.env.AUTH_BRIDGE_SECRET?.trim(),
+    process.env.PAYMENT_CREDENTIALS_ENCRYPTION_KEY?.trim(),
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+  ].filter((v): v is string => Boolean(v));
+
+  if (forbiddenSharedSecrets.includes(trimmed)) {
+    throw new ForbiddenError(
+      `FAIL-CLOSED: ${envVarName} deve ser um segredo exclusivo do Billing SaaS e não pode reutilizar segredos de Auth, Supabase ou Retail.`
+    );
+  }
+}
+
 /**
  * Resolve credenciais exclusivas da conta recebedora da DevEssent para Billing SaaS.
- * NUNCA lê credenciais de estabelecimentos clientes (retail_payment_connections).
+ * NUNCA lê credenciais de estabelecimentos clientes (retail_payment_connections),
+ * NUNCA reutiliza segredos de outros módulos e NUNCA usa fallback previsível em ambientes públicos.
  */
 export function resolveDevEssentBillingCredentials(): {
   accessToken: string;
   webhookSecret: string;
   isOfficialSandboxApi: boolean;
+  providerOrigin: "mercado_pago_official_sandbox" | "internal_sandbox_simulator";
 } {
   const rawToken = process.env.BILLING_MP_ACCESS_TOKEN?.trim() || "";
-  const rawWebhookSecret = process.env.BILLING_MP_WEBHOOK_SECRET?.trim() || "";
+  const rawMpWebhookSecret = process.env.BILLING_MP_WEBHOOK_SECRET?.trim() || "";
+  const rawSimulatorSecret = process.env.BILLING_WEBHOOK_SANDBOX_SECRET?.trim() || "";
 
-  // Bloqueio Fail-Closed: nunca aceitar credenciais de produção APP_USR-* na Fase 6E.2
+  // Bloqueio Fail-Closed: nunca aceitar credenciais de produção APP_USR-* na Fase 6E.2/6E.2B
   if (rawToken.startsWith("APP_USR-")) {
     throw new ForbiddenError(
       "FAIL-CLOSED: BILLING_MP_ACCESS_TOKEN de produção (APP_USR-) bloqueada. Utilize apenas credenciais Sandbox."
@@ -88,31 +136,37 @@ export function resolveDevEssentBillingCredentials(): {
   const isOfficialSandboxApi =
     rawToken.startsWith("TEST-") && !rawToken.startsWith("TEST-DEVESSENT-BILLING-SANDBOX-");
 
-  if (isOfficialSandboxApi && !rawWebhookSecret) {
-    throw new ValidationError(
-      "BILLING_MP_WEBHOOK_SECRET é obrigatório quando BILLING_MP_ACCESS_TOKEN oficial de sandbox está configurado."
+  if (isOfficialSandboxApi) {
+    assertStrongExclusiveSecret(
+      rawMpWebhookSecret,
+      MIN_OFFICIAL_WEBHOOK_SECRET_LENGTH,
+      "BILLING_MP_WEBHOOK_SECRET"
     );
+    return {
+      accessToken: rawToken,
+      webhookSecret: rawMpWebhookSecret,
+      isOfficialSandboxApi: true,
+      providerOrigin: "mercado_pago_official_sandbox",
+    };
   }
 
-  // Em modo simulador interno sandbox, usa segredo derivado exclusivamente de segredo de servidor Billing
-  // (nunca compartilha credenciais das lojas clientes).
-  const fallbackSecretSource =
-    rawWebhookSecret ||
-    process.env.BILLING_WEBHOOK_SANDBOX_SECRET?.trim() ||
-    process.env.AUTH_BRIDGE_SECRET?.trim() ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    "devessent-billing-sandbox-local-hmac-secret";
+  // Modo simulador interno sandbox: exige segredo exclusivo obrigatório (sem fallback previsível!)
+  const exclusiveSimSecret = rawSimulatorSecret || rawMpWebhookSecret;
+  assertStrongExclusiveSecret(
+    exclusiveSimSecret,
+    MIN_SIMULATOR_SECRET_LENGTH,
+    "BILLING_WEBHOOK_SANDBOX_SECRET"
+  );
 
-  const derivedSandboxWebhookSecret = rawWebhookSecret
-    ? rawWebhookSecret
-    : createHmac("sha256", fallbackSecretSource)
-        .update("devessent:saas_billing:webhook_sandbox:v1")
-        .digest("hex");
+  const derivedSandboxWebhookSecret = createHmac("sha256", exclusiveSimSecret)
+    .update("devessent:saas_billing:webhook_sandbox:v2")
+    .digest("hex");
 
   return {
-    accessToken: rawToken || "TEST-DEVESSENT-BILLING-SANDBOX-INTERNAL",
+    accessToken: "TEST-DEVESSENT-BILLING-SANDBOX-INTERNAL",
     webhookSecret: derivedSandboxWebhookSecret,
-    isOfficialSandboxApi,
+    isOfficialSandboxApi: false,
+    providerOrigin: "internal_sandbox_simulator",
   };
 }
 
@@ -154,19 +208,38 @@ export class MercadoPagoBillingProvider implements BillingProvider {
   }
 
   public getRuntimeStatus(): BillingProviderRuntimeStatus {
-    const creds = resolveDevEssentBillingCredentials();
+    let mode: "official_sandbox_api" | "internal_sandbox_simulator" = "internal_sandbox_simulator";
+    let secretConfigured = false;
+    try {
+      const creds = resolveDevEssentBillingCredentials();
+      mode = creds.isOfficialSandboxApi ? "official_sandbox_api" : "internal_sandbox_simulator";
+      secretConfigured = true;
+    } catch {
+      const rawToken = process.env.BILLING_MP_ACCESS_TOKEN?.trim() || "";
+      mode =
+        rawToken.startsWith("TEST-") && !rawToken.startsWith("TEST-DEVESSENT-BILLING-SANDBOX-")
+          ? "official_sandbox_api"
+          : "internal_sandbox_simulator";
+      secretConfigured = false;
+    }
+
     return {
       provider: "mercado_pago",
-      mode: creds.isOfficialSandboxApi ? "official_sandbox_api" : "internal_sandbox_simulator",
+      mode,
       environment: "sandbox",
       liveChargesEnabled: false,
       supportsCreditCardRecurring: true,
       supportsScheduledStartDate: true,
       supportsPixAutomatic: false, // Preparado arquiteturalmente; ativação futura mediante liberação PJ no provedor
       webhookEndpointPath: "/api/webhooks/billing/mercado_pago",
-      statusNote: creds.isOfficialSandboxApi
-        ? "Conectado à API oficial de Assinaturas do Mercado Pago em modo Sandbox (conta DevEssent)."
-        : "Operando em Simulador Interno Sandbox (credenciais oficiais BILLING_MP_ACCESS_TOKEN / BILLING_MP_WEBHOOK_SECRET da DevEssent ainda pendentes).",
+      statusNote:
+        mode === "official_sandbox_api"
+          ? secretConfigured
+            ? "Conectado à API oficial de Assinaturas do Mercado Pago em modo Sandbox (conta DevEssent)."
+            : "API oficial Sandbox detectada, porém BILLING_MP_WEBHOOK_SECRET exclusivo não configurado (fail-closed ativo)."
+          : secretConfigured
+            ? "Operando em Simulador Interno Sandbox com segredo HMAC exclusivo (credenciais oficiais BILLING_MP_ACCESS_TOKEN / BILLING_MP_WEBHOOK_SECRET da DevEssent ainda pendentes)."
+            : "Simulador Interno Sandbox sem segredo exclusivo BILLING_WEBHOOK_SANDBOX_SECRET configurado (webhooks bloqueados fail-closed).",
     };
   }
 
@@ -437,6 +510,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
         failureReason: sim.failureReason,
         rawSummary: {
           mode: "internal_sandbox_simulator",
+          providerOrigin: "internal_sandbox_simulator",
           externalResourceId: sim.externalResourceId,
           invoiceStatus: sim.invoiceStatus,
           subscriptionStatus: sim.subscriptionStatus,
@@ -469,6 +543,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     }
 
     if (params.resourceType === "subscription_preapproval") {
+      const paymentMethodId =
+        typeof data.payment_method_id === "string" && data.payment_method_id
+          ? `Cartão (${data.payment_method_id.toUpperCase()} · Mercado Pago Sandbox)`
+          : "Cartão de Crédito (Mercado Pago Sandbox)";
       return {
         provider: "mercado_pago",
         externalEventId: `mp:preapproval:${params.externalResourceId}`,
@@ -483,12 +561,19 @@ export class MercadoPagoBillingProvider implements BillingProvider {
         ),
         amountCents: null,
         currency: "BRL",
-        dueDate: null,
+        dueDate:
+          typeof data.next_payment_date === "string" ? data.next_payment_date.slice(0, 10) : null,
         billingCycleKey: null,
-        paymentMethodLabel: null,
+        paymentMethodLabel: paymentMethodId,
         failureCode: null,
         failureReason: null,
-        rawSummary: { mpId: data.id, mpStatus: data.status },
+        rawSummary: {
+          mode: "official_sandbox_api",
+          providerOrigin: "mercado_pago_official_sandbox",
+          mpId: data.id,
+          mpStatus: data.status,
+          nextPaymentDate: data.next_payment_date ?? null,
+        },
       };
     }
 
@@ -518,7 +603,13 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       paymentMethodLabel: "Cartão de Crédito (Mercado Pago)",
       failureCode: mpStatus === "rejected" ? "mp_rejected" : null,
       failureReason: mpStatus === "rejected" ? "Cobrança recorrente recusada pelo emissor." : null,
-      rawSummary: { mpId: data.id, mpStatus, preapprovalId: data.preapproval_id },
+      rawSummary: {
+        mode: "official_sandbox_api",
+        providerOrigin: "mercado_pago_official_sandbox",
+        mpId: data.id,
+        mpStatus,
+        preapprovalId: data.preapproval_id,
+      },
     };
   }
 }

@@ -136,6 +136,7 @@ function verifyBuiltBundle(): void {
     { name: "old-staging-ref", regex: /vjoodpqjzxpmrfvjbxrq/ },
     { name: "ejc-project-ref", regex: /guppedddwnuvluhiaaas/ },
     { name: "brokeos-project-ref", regex: /hhjqlkickedbnlbuxwlo/ },
+    { name: "mp-prod-access-token", regex: /APP_USR-[a-zA-Z0-9_-]{12,}/ },
   ];
 
   for (const file of codeFiles) {
@@ -187,6 +188,7 @@ function buildIsolatedProcessEnv(extra: Record<string, string>): NodeJS.ProcessE
     if (
       k.startsWith("XAMPP_") ||
       k.startsWith("NEXT_PUBLIC_") ||
+      k.startsWith("BILLING_") ||
       k === "APP_BACKEND_MODE" ||
       k === "SUPABASE_SERVICE_ROLE_KEY" ||
       k === "PAYMENT_CREDENTIALS_ENCRYPTION_KEY" ||
@@ -271,6 +273,10 @@ async function runPreview(): Promise<void> {
     validated.rawVars.AUTH_BRIDGE_SECRET ||
     validated.serviceRoleKey;
 
+  const billingSandboxSecret =
+    validated.rawVars.BILLING_WEBHOOK_SANDBOX_SECRET?.trim() ||
+    crypto.randomBytes(32).toString("hex");
+
   const devVarsLines = [
     `APP_BACKEND_MODE=supabase`,
     `NEXT_PUBLIC_APP_ENV=staging`,
@@ -280,6 +286,13 @@ async function runPreview(): Promise<void> {
     `SUPABASE_SERVICE_ROLE_KEY=${validated.serviceRoleKey}`,
     `PAYMENT_CREDENTIALS_ENCRYPTION_KEY=${paymentEncKey}`,
     `AUTH_BRIDGE_SECRET=${authBridgeSecret}`,
+    `BILLING_WEBHOOK_SANDBOX_SECRET=${billingSandboxSecret}`,
+    ...(validated.rawVars.BILLING_MP_ACCESS_TOKEN?.trim()
+      ? [`BILLING_MP_ACCESS_TOKEN=${validated.rawVars.BILLING_MP_ACCESS_TOKEN.trim()}`]
+      : []),
+    ...(validated.rawVars.BILLING_MP_WEBHOOK_SECRET?.trim()
+      ? [`BILLING_MP_WEBHOOK_SECRET=${validated.rawVars.BILLING_MP_WEBHOOK_SECRET.trim()}`]
+      : []),
     ...(process.env.DEVESSENT_PERF_TRACE
       ? [`DEVESSENT_PERF_TRACE=${process.env.DEVESSENT_PERF_TRACE}`]
       : []),
@@ -428,16 +441,53 @@ async function runSyncSecrets(): Promise<void> {
     validated.rawVars.AUTH_BRIDGE_SECRET?.trim() ||
     crypto.randomBytes(32).toString("hex");
 
-  const secretPayload = {
+  const billingSandboxSecret =
+    validated.rawVars.BILLING_WEBHOOK_SANDBOX_SECRET?.trim() || "";
+  if (!billingSandboxSecret || billingSandboxSecret.length < 32) {
+    throw new Error(
+      "BLOQUEIO DE SEGURANÇA BILLING: BILLING_WEBHOOK_SANDBOX_SECRET exclusivo (>= 32 caracteres) obrigatório em .env.staging.local antes de sincronizar segredos."
+    );
+  }
+  if (
+    billingSandboxSecret === validated.serviceRoleKey ||
+    billingSandboxSecret === authBridgeSecret ||
+    billingSandboxSecret === paymentEncryptionKey
+  ) {
+    throw new Error(
+      "BLOQUEIO DE SEGURANÇA BILLING: BILLING_WEBHOOK_SANDBOX_SECRET deve ser exclusivo e distinto dos segredos de Auth, Supabase e Retail."
+    );
+  }
+
+  const secretPayload: Record<string, string> = {
     SUPABASE_SERVICE_ROLE_KEY: validated.serviceRoleKey,
     AUTH_BRIDGE_SECRET: authBridgeSecret,
     PAYMENT_CREDENTIALS_ENCRYPTION_KEY: paymentEncryptionKey,
+    BILLING_WEBHOOK_SANDBOX_SECRET: billingSandboxSecret,
   };
+
+  const mpAccessToken = validated.rawVars.BILLING_MP_ACCESS_TOKEN?.trim() || "";
+  const mpWebhookSecret = validated.rawVars.BILLING_MP_WEBHOOK_SECRET?.trim() || "";
+  if (mpAccessToken) {
+    if (mpAccessToken.startsWith("APP_USR-")) {
+      throw new Error(
+        "BLOQUEIO FAIL-CLOSED: BILLING_MP_ACCESS_TOKEN de produção (APP_USR-) proibida em Staging."
+      );
+    }
+    if (!mpWebhookSecret || mpWebhookSecret.length < 16) {
+      throw new Error(
+        "BLOQUEIO DE SEGURANÇA BILLING: BILLING_MP_WEBHOOK_SECRET é obrigatório quando BILLING_MP_ACCESS_TOKEN está definido."
+      );
+    }
+    secretPayload.BILLING_MP_ACCESS_TOKEN = mpAccessToken;
+    secretPayload.BILLING_MP_WEBHOOK_SECRET = mpWebhookSecret;
+  }
+
+  const syncedKeyNames = Object.keys(secretPayload).join(", ");
 
   console.log("🔐 DevEssent Platform — Sincronização Segura de Cloudflare Secrets (STAGING)");
   console.log(`   Conta CF    : ${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID} (DevEssent verificada)`);
   console.log(`   Worker alvo : ${EXPECTED_STAGING_WORKER_NAME}`);
-  console.log("   Chaves      : SUPABASE_SERVICE_ROLE_KEY, AUTH_BRIDGE_SECRET, PAYMENT_CREDENTIALS_ENCRYPTION_KEY");
+  console.log(`   Chaves      : ${syncedKeyNames}`);
   console.log("   Sigilo      : envio direto por stdin (zero arquivos temporários, zero impressão de valores)");
 
   const exitCode = await new Promise<number>((resolve, reject) => {

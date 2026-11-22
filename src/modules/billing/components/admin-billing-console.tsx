@@ -782,7 +782,9 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
                           </button>
                         )}
 
-                        {readiness.canCharge && (
+                        {readiness.canCharge &&
+                          providerStatus.mode === "internal_sandbox_simulator" &&
+                          overview.environmentLabel !== "production" && (
                           <>
                             <button
                               type="button"

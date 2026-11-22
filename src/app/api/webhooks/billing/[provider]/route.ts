@@ -16,10 +16,9 @@ import {
 } from "@/modules/billing";
 
 const MAX_BILLING_WEBHOOK_BYTES = 64 * 1024; // 64 KB
-const ALLOWED_BILLING_PROVIDERS = new Set<BillingProviderName>([
-  "mercado_pago",
-  "sandbox_simulator",
-]);
+// Endpoint HTTP público aceita exclusivamente o provedor oficial configurado (`mercado_pago`).
+// Simulações internas em Staging passam por autenticação Platform Admin + HMAC exclusivo.
+const ALLOWED_BILLING_PROVIDERS = new Set<BillingProviderName>(["mercado_pago"]);
 
 /**
  * Endpoint exclusivo de Webhooks do Billing SaaS da DevEssent (§11).

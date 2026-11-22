@@ -12,6 +12,7 @@ import {
   buildBillingWebhookSignature,
   getDefaultBillingProvider,
   MercadoPagoBillingProvider,
+  resolveDevEssentBillingCredentials,
 } from "../providers/mercado-pago-billing.provider";
 import {
   authorizeSubscriptionPaymentSchema,
@@ -1016,6 +1017,20 @@ export class BillingSubscriptionService {
     externalEventId: string;
   }> {
     BillingPermissionService.assertPermission(params.actorRole, "simulate_billing_sandbox");
+
+    if (env.NEXT_PUBLIC_APP_ENV === "production") {
+      throw new ForbiddenError(
+        "FAIL-CLOSED: Simulação interna de cobrança recorrente é proibida em ambiente de produção."
+      );
+    }
+
+    const creds = resolveDevEssentBillingCredentials();
+    if (creds.isOfficialSandboxApi) {
+      throw new ConflictError(
+        "O simulador interno está desabilitado enquanto a API Oficial Mercado Pago Sandbox estiver ativa. Dispare eventos diretamente pelo Mercado Pago Sandbox."
+      );
+    }
+
     const parsed = simulateSandboxChargeSchema.parse(params.input);
 
     const admin = createAdminClient();

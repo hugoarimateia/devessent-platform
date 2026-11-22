@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   BillingInvariants,
   BillingPermissionService,
   buildBillingWebhookSignature,
   MercadoPagoBillingProvider,
+  resolveDevEssentBillingCredentials,
 } from "@/modules/billing";
 
 describe("Fase 6E.2 — Billing SaaS, Contratos 50/50, RBAC e Webhooks HMAC", () => {
@@ -112,7 +113,58 @@ describe("Fase 6E.2 — Billing SaaS, Contratos 50/50, RBAC e Webhooks HMAC", ()
     );
   });
 
+  afterEach(() => {
+    delete process.env.BILLING_WEBHOOK_SANDBOX_SECRET;
+    delete process.env.BILLING_MP_ACCESS_TOKEN;
+    delete process.env.BILLING_MP_WEBHOOK_SECRET;
+    delete process.env.AUTH_BRIDGE_SECRET;
+  });
+
+  it("exige segredo exclusivo obrigatório no Billing (sem fallback previsível e sem reuso de segredos de outros módulos)", () => {
+    delete process.env.BILLING_WEBHOOK_SANDBOX_SECRET;
+    delete process.env.BILLING_MP_ACCESS_TOKEN;
+    delete process.env.BILLING_MP_WEBHOOK_SECRET;
+
+    // 1. Sem segredo exclusivo -> FAIL-CLOSED (nenhum fallback hardcoded permitido!)
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/FAIL-CLOSED/i);
+
+    // 2. Segredo curto ou previsível -> FAIL-CLOSED
+    process.env.BILLING_WEBHOOK_SANDBOX_SECRET = "curto-demais";
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/FAIL-CLOSED/i);
+
+    process.env.BILLING_WEBHOOK_SANDBOX_SECRET =
+      "devessent-billing-sandbox-local-hmac-secret-previsivel";
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/previsível/i);
+
+    // 3. Reutilizar AUTH_BRIDGE_SECRET -> FAIL-CLOSED
+    const sharedSecret = "a".repeat(64);
+    process.env.AUTH_BRIDGE_SECRET = sharedSecret;
+    process.env.BILLING_WEBHOOK_SANDBOX_SECRET = sharedSecret;
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/reutilizar/i);
+
+    // 4. Segredo exclusivo forte -> libera modo internal_sandbox_simulator
+    process.env.BILLING_WEBHOOK_SANDBOX_SECRET = "9f4c82d1e7a03b56c4d9e8f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5";
+    const simCreds = resolveDevEssentBillingCredentials();
+    expect(simCreds.isOfficialSandboxApi).toBe(false);
+    expect(simCreds.providerOrigin).toBe("internal_sandbox_simulator");
+
+    // 5. Credencial oficial Sandbox TEST-* exige BILLING_MP_WEBHOOK_SECRET obrigatório
+    process.env.BILLING_MP_ACCESS_TOKEN = "TEST-1111222233334444-010101-abcdef1234567890-999999";
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/BILLING_MP_WEBHOOK_SECRET/i);
+
+    process.env.BILLING_MP_WEBHOOK_SECRET = "mp-sbx-exclusive-wh-secret-7a8b9c0d1e2f";
+    const officialCreds = resolveDevEssentBillingCredentials();
+    expect(officialCreds.isOfficialSandboxApi).toBe(true);
+    expect(officialCreds.providerOrigin).toBe("mercado_pago_official_sandbox");
+
+    // 6. Credencial de produção APP_USR-* -> bloqueada fail-closed
+    process.env.BILLING_MP_ACCESS_TOKEN = "APP_USR-9999999999999999-live-blocked";
+    expect(() => resolveDevEssentBillingCredentials()).toThrow(/APP_USR-/i);
+  });
+
   it("valida assinatura HMAC-SHA256 dos webhooks exclusivos Billing e rejeita live_mode ou assinaturas forjadas", () => {
+    process.env.BILLING_WEBHOOK_SANDBOX_SECRET =
+      "4b7e1c9d0a2f58e3b6c1d4a7e9f20358a6c9d1e4f7b2a5c8d0e3f6a9b1c4d7e2";
     const provider = new MercadoPagoBillingProvider();
     const dataId = "MP-AUTHPAY-SBX-001";
     const xRequestId = "req-billing-test-01";

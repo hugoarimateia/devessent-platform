@@ -2,10 +2,12 @@ import type { Json } from "@/types/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AuditService } from "@/core/audit/services/audit-service";
 import {
+  ForbiddenError,
   NotFoundError,
   UnauthorizedError,
   ValidationError,
 } from "@/core/errors/app-error";
+import { env } from "@/lib/environment/env";
 import { BillingInvariants } from "../domain/billing-invariants";
 import {
   getDefaultBillingProvider,
@@ -84,9 +86,15 @@ export class BillingWebhookService {
     }
 
     // 2. Suporte stateless no Cloudflare Workers para modo simulador interno sandbox:
-    //    somente após assinatura HMAC-SHA256 válida e exclusivamente quando credenciais oficiais
-    //    ainda não estão configuradas, hidrata o recurso sintético a partir do banco de staging.
+    //    somente em Staging/Dev, somente após assinatura HMAC-SHA256 com segredo exclusivo
+    //    BILLING_WEBHOOK_SANDBOX_SECRET e exclusivamente quando credenciais oficiais não estão ativas.
     const creds = resolveDevEssentBillingCredentials();
+    if (!creds.isOfficialSandboxApi && env.NEXT_PUBLIC_APP_ENV === "production") {
+      throw new ForbiddenError(
+        "FAIL-CLOSED: Modo simulador interno Billing bloqueado em ambiente de produção."
+      );
+    }
+
     if (
       !creds.isOfficialSandboxApi &&
       !MercadoPagoBillingProvider.getSimulatedResource(verifiedHeader.externalResourceId)
@@ -128,6 +136,13 @@ export class BillingWebhookService {
                   hintedSub.next_billing_date || hintedSub.scheduled_start_date
                 );
 
+          const preapprovalSubStatus =
+            rawBodyObj.sandbox_subscription_status === "cancelled"
+              ? "cancelled"
+              : rawBodyObj.sandbox_subscription_status === "past_due"
+                ? "past_due"
+                : "active";
+
           MercadoPagoBillingProvider.seedSimulatedResource({
             externalResourceId: verifiedHeader.externalResourceId,
             resourceType: verifiedHeader.resourceType,
@@ -137,7 +152,9 @@ export class BillingWebhookService {
             invoiceStatus:
               verifiedHeader.resourceType === "subscription_authorized_payment" ? safeStatus : null,
             subscriptionStatus:
-              verifiedHeader.resourceType === "subscription_preapproval" ? "active" : null,
+              verifiedHeader.resourceType === "subscription_preapproval"
+                ? preapprovalSubStatus
+                : null,
             amountCents: hintedSub.contracted_amount_cents,
             currency: "BRL",
             dueDate: hintedSub.next_billing_date || hintedSub.scheduled_start_date,
@@ -163,6 +180,11 @@ export class BillingWebhookService {
       rawBodyObj,
     });
 
+    const taggedSummary: Record<string, unknown> = {
+      ...(authoritative.rawSummary ?? {}),
+      providerOrigin: creds.providerOrigin,
+    };
+
     // 4. Localizar assinatura alvo exclusivamente na tabela billing_subscriptions
     let subRow:
       | {
@@ -172,17 +194,21 @@ export class BillingWebhookService {
           status: string;
           scheduled_start_date: string;
           next_billing_date: string | null;
+          authorized_at: string | null;
+          activation_confirmed_at: string | null;
+          activated_at: string | null;
           payment_method_type: string;
           payment_method_label: string | null;
         }
       | null = null;
 
+    const subSelectColumns =
+      "id, tenant_id, contracted_amount_cents, status, scheduled_start_date, next_billing_date, authorized_at, activation_confirmed_at, activated_at, payment_method_type, payment_method_label";
+
     if (authoritative.externalSubscriptionId) {
       const { data } = await admin
         .from("billing_subscriptions")
-        .select(
-          "id, tenant_id, contracted_amount_cents, status, scheduled_start_date, next_billing_date, payment_method_type, payment_method_label"
-        )
+        .select(subSelectColumns)
         .eq("external_subscription_id", authoritative.externalSubscriptionId)
         .maybeSingle();
       subRow = data;
@@ -191,20 +217,16 @@ export class BillingWebhookService {
     if (!subRow && authoritative.externalReference) {
       const { data } = await admin
         .from("billing_subscriptions")
-        .select(
-          "id, tenant_id, contracted_amount_cents, status, scheduled_start_date, next_billing_date, payment_method_type, payment_method_label"
-        )
+        .select(subSelectColumns)
         .eq("external_reference", authoritative.externalReference)
         .maybeSingle();
       subRow = data;
     }
 
-    if (!subRow && params.query["subscription_id"]) {
+    if (!subRow && !creds.isOfficialSandboxApi && params.query["subscription_id"]) {
       const { data } = await admin
         .from("billing_subscriptions")
-        .select(
-          "id, tenant_id, contracted_amount_cents, status, scheduled_start_date, next_billing_date, payment_method_type, payment_method_label"
-        )
+        .select(subSelectColumns)
         .eq("id", params.query["subscription_id"])
         .maybeSingle();
       subRow = data;
@@ -214,7 +236,7 @@ export class BillingWebhookService {
       throw new NotFoundError("Assinatura SaaS correspondente ao webhook Billing não localizada.");
     }
 
-    // 5. Tratamento de evento de contrato (`subscription_preapproval`) sem fatura associada
+    // 5. Tratamento autoritativo e idempotente de evento de contrato (`subscription_preapproval`)
     if (authoritative.resourceType === "subscription_preapproval") {
       const { data: existingEvt } = await admin
         .from("billing_webhook_events")
@@ -233,6 +255,100 @@ export class BillingWebhookService {
         };
       }
 
+      const nowIso = new Date().toISOString();
+      const today = nowIso.slice(0, 10);
+      let nextSubStatus = subRow.status;
+
+      if (authoritative.subscriptionStatus === "active" && subRow.status !== "cancelled") {
+        // Autorização confirmada no provedor: só ativa se marco contratual + data agendada já atingidos!
+        const canActivateNow =
+          Boolean(subRow.activation_confirmed_at) && subRow.scheduled_start_date <= today;
+        nextSubStatus =
+          subRow.status === "active" || subRow.status === "cancel_scheduled"
+            ? subRow.status
+            : canActivateNow
+              ? "active"
+              : "awaiting_activation";
+
+        await admin
+          .from("billing_subscriptions")
+          .update({
+            status: nextSubStatus,
+            authorized_at: subRow.authorized_at ?? nowIso,
+            activated_at: nextSubStatus === "active" ? subRow.activated_at ?? nowIso : subRow.activated_at,
+            payment_method_type:
+              subRow.payment_method_type === "unconfigured"
+                ? "credit_card"
+                : subRow.payment_method_type,
+            payment_method_label:
+              subRow.payment_method_label ||
+              authoritative.paymentMethodLabel ||
+              "Cartão de Crédito (Mercado Pago Sandbox)",
+            next_billing_date: authoritative.dueDate || subRow.next_billing_date,
+          })
+          .eq("id", subRow.id);
+      } else if (authoritative.subscriptionStatus === "cancelled" && subRow.status !== "cancelled") {
+        nextSubStatus = "cancelled";
+        await admin
+          .from("billing_subscriptions")
+          .update({
+            status: "cancelled",
+            cancelled_at: nowIso,
+            next_billing_date: null,
+            cancellation_reason: "Cancelamento confirmado via webhook autoritativo do provedor.",
+          })
+          .eq("id", subRow.id);
+      } else if (
+        authoritative.subscriptionStatus === "past_due" &&
+        subRow.status !== "cancelled" &&
+        subRow.status !== "past_due"
+      ) {
+        // Pausa/atraso no provedor NUNCA suspende a loja (tenants.status intocado)
+        nextSubStatus = "past_due";
+        await admin
+          .from("billing_subscriptions")
+          .update({
+            status: "past_due",
+            delinquent_since: nowIso,
+          })
+          .eq("id", subRow.id);
+      }
+
+      if (nextSubStatus !== subRow.status) {
+        await admin.from("billing_subscription_history").insert({
+          subscription_id: subRow.id,
+          tenant_id: subRow.tenant_id,
+          event_type:
+            nextSubStatus === "cancelled"
+              ? "cancelled"
+              : nextSubStatus === "past_due"
+                ? "delinquency_flagged"
+                : "authorized",
+          previous_status: subRow.status,
+          new_status: nextSubStatus,
+          reason: `Evento autoritativo subscription_preapproval reconciliado (${creds.providerOrigin}).`,
+          metadata: taggedSummary as Json,
+        });
+
+        await AuditService.recordEvent({
+          supabase: admin,
+          tenantId: subRow.tenant_id,
+          actorUserId: null,
+          action:
+            nextSubStatus === "cancelled"
+              ? "billing.subscription_cancelled"
+              : "billing.subscription_authorized",
+          resourceType: "billing_subscription",
+          resourceId: subRow.id,
+          metadata: {
+            previousStatus: subRow.status,
+            newStatus: nextSubStatus,
+            externalResourceId: authoritative.externalResourceId,
+            providerOrigin: creds.providerOrigin,
+          },
+        });
+      }
+
       await admin.from("billing_webhook_events").insert({
         provider: params.providerName,
         environment: "sandbox",
@@ -244,8 +360,8 @@ export class BillingWebhookService {
         tenant_id: subRow.tenant_id,
         signature_verified: true,
         processing_status: "processed",
-        payload_summary: authoritative.rawSummary as Json,
-        processed_at: new Date().toISOString(),
+        payload_summary: taggedSummary as Json,
+        processed_at: nowIso,
       });
 
       return {
@@ -253,7 +369,7 @@ export class BillingWebhookService {
         subscriptionId: subRow.id,
         invoiceId: null,
         invoiceStatus: null,
-        subscriptionStatus: subRow.status,
+        subscriptionStatus: nextSubStatus,
       };
     }
 
@@ -285,7 +401,7 @@ export class BillingWebhookService {
       p_payment_method_label: authoritative.paymentMethodLabel || subRow.payment_method_label || undefined,
       p_failure_code: authoritative.failureCode || undefined,
       p_failure_reason: authoritative.failureReason || undefined,
-      p_payload_summary: authoritative.rawSummary as Json,
+      p_payload_summary: taggedSummary as Json,
     });
 
     if (rpcErr) {
@@ -317,6 +433,7 @@ export class BillingWebhookService {
           invoiceStatus,
           subscriptionStatus: resObj.subscriptionStatus ?? subRow.status,
           externalPaymentId: authoritative.externalResourceId,
+          providerOrigin: creds.providerOrigin,
         },
       });
     }

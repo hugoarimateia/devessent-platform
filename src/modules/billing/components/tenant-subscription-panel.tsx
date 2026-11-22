@@ -251,17 +251,32 @@ export function TenantSubscriptionPanel({
                     Nenhum número completo de cartão ou CVV é armazenado na DevEssent Platform.
                   </span>
                 </div>
-                <button
-                  type="button"
-                  data-testid="toggle-payment-method-btn"
-                  onClick={() => setShowCardForm((v) => !v)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:brightness-105 cursor-pointer"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  {sub.authorizedAt
-                    ? "Atualizar forma de pagamento"
-                    : "Autorizar pagamento recorrente (Sandbox)"}
-                </button>
+                {view.providerStatus.mode === "official_sandbox_api" &&
+                !sub.authorizedAt &&
+                sub.authorizationUrl?.startsWith("https://") ? (
+                  <a
+                    href={sub.authorizationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="official-mp-authorize-link"
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:brightness-105"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    Autorizar no Mercado Pago (Sandbox)
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="toggle-payment-method-btn"
+                    onClick={() => setShowCardForm((v) => !v)}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:brightness-105 cursor-pointer"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    {sub.authorizedAt
+                      ? "Atualizar forma de pagamento"
+                      : "Autorizar pagamento recorrente (Sandbox)"}
+                  </button>
+                )}
               </div>
 
               {showCardForm && (
