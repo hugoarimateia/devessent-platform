@@ -56,6 +56,7 @@ export interface SimulatedBillingResource {
   paymentMethodLabel: string | null;
   failureCode: string | null;
   failureReason: string | null;
+  providerUpdatedAt?: string | null;
 }
 
 export interface ResolvedBillingCredentials {
@@ -401,6 +402,15 @@ function mapMpPreapprovalPayloadToEvent(
       ? `Cartão (${data.payment_method_id.toUpperCase()} · Mercado Pago Sandbox)`
       : "Cartão de Crédito (Mercado Pago Sandbox)";
 
+  const providerUpdatedAt =
+    typeof data.last_modified === "string" && data.last_modified
+      ? data.last_modified
+      : typeof data.date_last_updated === "string" && data.date_last_updated
+        ? data.date_last_updated
+        : typeof data.date_created === "string" && data.date_created
+          ? data.date_created
+          : null;
+
   return {
     provider: "mercado_pago",
     externalEventId: `mp:preapproval:${id}`,
@@ -409,6 +419,7 @@ function mapMpPreapprovalPayloadToEvent(
     externalResourceId: id,
     externalSubscriptionId: id,
     externalReference: typeof data.external_reference === "string" ? data.external_reference : null,
+    providerUpdatedAt,
     collectorId:
       data.collector_id !== undefined && data.collector_id !== null
         ? String(data.collector_id)
@@ -465,6 +476,15 @@ function mapMpAuthorizedPaymentPayloadToEvent(
     typeof nestedPayment.status_detail === "string" ? nestedPayment.status_detail : null;
   const mappedStatus = mapMpAuthorizedPaymentStatus(rawStatus);
 
+  const providerUpdatedAt =
+    typeof data.last_modified === "string" && data.last_modified
+      ? data.last_modified
+      : typeof nestedPayment.date_last_updated === "string" && nestedPayment.date_last_updated
+        ? nestedPayment.date_last_updated
+        : typeof data.date_created === "string" && data.date_created
+          ? data.date_created
+          : null;
+
   return {
     provider: "mercado_pago",
     externalEventId: `mp:authpay:${id}`,
@@ -475,6 +495,7 @@ function mapMpAuthorizedPaymentPayloadToEvent(
       typeof data.preapproval_id === "string" ? data.preapproval_id : null,
     externalReference:
       typeof data.external_reference === "string" ? data.external_reference : null,
+    providerUpdatedAt,
     collectorId:
       data.collector_id !== undefined && data.collector_id !== null
         ? String(data.collector_id)
@@ -533,6 +554,15 @@ function mapMpPaymentPayloadToEvent(
           ? data.preapproval_id
           : null;
 
+  const providerUpdatedAt =
+    typeof data.date_last_updated === "string" && data.date_last_updated
+      ? data.date_last_updated
+      : typeof data.date_approved === "string" && data.date_approved
+        ? data.date_approved
+        : typeof data.date_created === "string" && data.date_created
+          ? data.date_created
+          : null;
+
   return {
     provider: "mercado_pago",
     externalEventId: `mp:payment:${id}`,
@@ -542,6 +572,7 @@ function mapMpPaymentPayloadToEvent(
     externalSubscriptionId: preapprovalId,
     externalReference:
       typeof data.external_reference === "string" ? data.external_reference : null,
+    providerUpdatedAt,
     collectorId:
       data.collector_id !== undefined && data.collector_id !== null
         ? String(data.collector_id)
@@ -1252,6 +1283,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
         externalResourceId: sim.externalResourceId,
         externalSubscriptionId: sim.externalSubscriptionId,
         externalReference: sim.externalReference,
+        providerUpdatedAt: sim.providerUpdatedAt ?? null,
         invoiceStatus: sim.invoiceStatus,
         subscriptionStatus: sim.subscriptionStatus,
         amountCents: sim.amountCents,

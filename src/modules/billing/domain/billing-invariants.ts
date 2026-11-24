@@ -237,6 +237,52 @@ export const BillingInvariants = {
   },
 
   /**
+   * Compara timestamps autoritativos do provedor (`last_modified` / `date_last_updated`)
+   * para impedir que um evento atrasado (mais antigo) sobrescreva uma atualização mais recente (§9E).
+   * Não depende apenas do nome do estado.
+   */
+  evaluatePreapprovalTemporalOrdering(params: {
+    lastRecordedProviderUpdatedAt: string | null | undefined;
+    incomingProviderUpdatedAt: string | null | undefined;
+  }): { isStale: boolean; lastMs: number | null; incomingMs: number | null } {
+    const lastMs = params.lastRecordedProviderUpdatedAt
+      ? Date.parse(params.lastRecordedProviderUpdatedAt)
+      : Number.NaN;
+    const incomingMs = params.incomingProviderUpdatedAt
+      ? Date.parse(params.incomingProviderUpdatedAt)
+      : Number.NaN;
+
+    if (!Number.isFinite(lastMs) || !Number.isFinite(incomingMs)) {
+      return {
+        isStale: false,
+        lastMs: Number.isFinite(lastMs) ? lastMs : null,
+        incomingMs: Number.isFinite(incomingMs) ? incomingMs : null,
+      };
+    }
+
+    return {
+      isStale: incomingMs < lastMs,
+      lastMs,
+      incomingMs,
+    };
+  },
+
+  /**
+   * Compõe chave idempotente determinística para gatilhos sem `body.id`/`x-request-id` (IPN),
+   * incorporando o timestamp autoritativo do provedor + estado para permitir retorno legítimo
+   * a um estado anterior (`active -> past_due -> active`) enquanto deduplica reenvios idênticos (§9E).
+   */
+  buildAuthoritativeIpnEventKey(params: {
+    resourceType: string;
+    externalResourceId: string;
+    providerUpdatedAt?: string | null;
+    authoritativeStatus: string;
+  }): string {
+    const tsPart = params.providerUpdatedAt?.trim() || "no-ts";
+    return `ipn:${params.resourceType}:${params.externalResourceId}:${tsPart}:${params.authoritativeStatus}`;
+  },
+
+  /**
    * Verifica se uma assinatura pode iniciar cobrança recorrente (§8):
    * exige autorização financeira válida + confirmação do marco contratual + não cancelada.
    */

@@ -122,10 +122,15 @@ A auditoria inicial frente à documentação oficial atualizada do Mercado Pago 
   - Webhook `/api/webhooks/billing/mercado_pago`: `1198 ms` (inclui TLS + HMAC + RPC transacional PostgreSQL Cloud)
 - **Zero polling:** nenhuma chamada à API Mercado Pago ocorre durante navegação nas páginas.
 - **Política de Cron/Filas:** não foram criados Cron Triggers nem Cloudflare Queues pagos nesta fase (reconciliação dirigida por webhooks + ação sob demanda `Sincronizar Mercado Pago`).
-- **Estratégia de Rollback preservada:**
-  - Versão ativa atual de Staging (Fase 6E.2B · `fcdda16`): `7c984c38-4e8d-4b9d-b093-889ab10222c4` (inalterada).
-  - Versão Preview da Fase 6E.2C (`2369c8b`): `9fd05285-d109-4444-bdbe-1e0403c7772f` (`https://9fd05285-devessent-platform-staging.devessent.workers.dev`).
-  - Rollback de referência da Fase 6E.1 (`6ba6c41`): `9d82b763-dc9c-4308-b966-4ed72ba0a028`.
+- **Estratégia de Preview URL Fixa, Callbacks e Rollback (§6):**
+  - **Alias Fixo de Preview (não-ativo, custo R$ 0,00 no Workers Free):** **`https://mp-sandbox-devessent-platform-staging.devessent.workers.dev`** (`--preview-alias mp-sandbox`).
+  - **Callback `back_url` da Preview:** `https://mp-sandbox-devessent-platform-staging.devessent.workers.dev/dashboard/assinatura` (garante retorno ao próprio ambiente Preview, sem redirecionar para o Staging ativo `7c984c38`).
+  - **URL fixa de Webhook para homologação isolada na Preview:** `https://mp-sandbox-devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago` (não rotaciona entre uploads e impede que notificações da Preview sejam reconciliadas acidentalmente pela versão anterior `7c984c38`).
+  - **Cookies e Auth:** cookies Supabase SSR são *host-only* (`Secure; SameSite=Lax`) e os redirects de middleware preservam a origem da Preview; isolamento de sessão entre `mp-sandbox-...` e `devessent-platform-staging...` garantido.
+  - **Ordenação temporal de eventos (§9E):** `BillingInvariants.evaluatePreapprovalTemporalOrdering` compara `last_modified`/`date_last_updated` autoritativo do provedor com `billing_subscriptions.metadata.lastProviderUpdatedAt` (rejeitando eventos atrasados como `ignored_out_of_order`), e `buildAuthoritativeIpnEventKey` inclui timestamp + estado para permitir retorno legítimo de estado (`active → past_due → active`) sem falsa deduplicação.
+  - **Versão ativa atual de Staging (Fase 6E.2B · `fcdda16`):** `7c984c38-4e8d-4b9d-b093-889ab10222c4` (inalterada).
+  - **Última Preview com alias fixo (`mp-sandbox`):** `6afc1bb3-e677-407f-a88f-47b0bc97901f` (`https://mp-sandbox-devessent-platform-staging.devessent.workers.dev`, startup `17 ms`, upload gzip `668,97 KiB`).
+  - **Rollback de referência da Fase 6E.1 (`6ba6c41`):** `9d82b763-dc9c-4308-b966-4ed72ba0a028`.
   - Comando de rollback imediato: `npx wrangler rollback <VERSION_ID> --name devessent-platform-staging`.
 
 ---
@@ -147,31 +152,35 @@ A auditoria inicial frente à documentação oficial atualizada do Mercado Pago 
    - **Eventos:** marque **Planos e assinaturas** (`subscription_preapproval`, `subscription_authorized_payment`, `subscription_preapproval_plan`) e **Pagamentos** (`payment`).
    - Salve e copie a **Assinatura secreta** (`BILLING_MP_WEBHOOK_SECRET`).
 
-### Etapa B — Procedimento Simples e Atômico para Criar Preview Version Oficial (Sem Expor Segredos e Sem Afetar Staging Ativo)
+### Etapa B — Procedimento Simples e Atômico para Ativar a Preview Fixa Oficial (Sem Expor Segredos e Sem Afetar Staging Ativo)
 
-> **Comportamento comprovado no Wrangler `4.165.0`:** `wrangler versions secret put` e `wrangler versions secret bulk` executam `PATCH /accounts/{accountId}/workers/workers/{scriptName}/versions/latest`, clonando a **última versão enviada** (código + assets + vars Supabase + segredos já existentes) sem ativá-la no tráfego principal. Para evitar versões intermediárias quebradas ou baseadas acidentalmente na revisão antiga `7c984c38`, utilize o comando atômico `pnpm cf:mp-sandbox-preview:staging`, que:
-> 1. Pré-valida localmente `BILLING_MP_ACCESS_TOKEN` em `GET https://api.mercadopago.com/users/me` (`tags: ["test_user"]`, `site_id: "MLB"` e `id === BILLING_MP_COLLECTOR_ID` — falha fechado antes de enviar qualquer segredo ao Cloudflare!).
-> 2. Envia o código 6E.2C (`wrangler versions upload --tag fase-6e2c-code`).
-> 3. Aplica todos os segredos oficiais em **um único `wrangler versions secret bulk` via stdin** (`--tag fase-6e2c-mp-sandbox-preview`), sem arquivos temporários e sem imprimir valores, **preservando integralmente** a versão ativa `7c984c38`, os bindings Supabase e os 4 segredos existentes.
+> **Comportamento comprovado no Wrangler `4.165.0`:** `wrangler versions upload --preview-alias mp-sandbox --secrets-file <efêmero>` envia código 6E.2C + `NEXT_PUBLIC_APP_URL` estável + segredos oficiais + alias fixo **`https://mp-sandbox-devessent-platform-staging.devessent.workers.dev`** em **uma única versão atômica não-ativa**, preservando integralmente os 4 segredos anteriores, os bindings Supabase e a versão ativa `7c984c38`. O arquivo efêmero (`0600` em `os.tmpdir()`) é sobrescrito com zeros e removido em `finally`.
 
-1. Adicione localmente em `.env.staging.local` (arquivo ignorado pelo Git; jamais compartilhar no chat):
+1. No painel da aplicação **`DevEssent Platform Billing Staging`** (https://www.mercadopago.com.br/developers/panel/app):
+   - Em *Contas de teste*, confirme o **User ID numérico** da Conta Vendedora de Teste (`BILLING_MP_COLLECTOR_ID`) e o e-mail da Conta Compradora de Teste (`test_user_...@testuser.com`).
+   - Em *Credenciais de teste* da aplicação vinculada à Conta Vendedora de Teste, copie o **Access Token** (`BILLING_MP_ACCESS_TOKEN`).
+   - Em *Detalhes da aplicação*, anote o **Número da aplicação** (`BILLING_MP_APPLICATION_ID`, opcional).
+   - Em *Webhooks → Configurar notificações → Modo de teste*, informe a URL fixa da Preview:
+     `https://mp-sandbox-devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`
+     selecione **`subscription_preapproval`**, **`subscription_authorized_payment`** e **`payment`**, salve e copie a **Assinatura secreta** (`BILLING_MP_WEBHOOK_SECRET`).
+2. Preencha localmente em `.env.staging.local` (ignorado pelo Git; jamais enviar no chat):
    ```dotenv
    BILLING_MP_ENVIRONMENT=sandbox
-   BILLING_MP_ACCESS_TOKEN=<access_token_da_conta_vendedora_de_teste>
-   BILLING_MP_COLLECTOR_ID=<user_id_numerico_da_conta_vendedora_de_teste>
-   BILLING_MP_WEBHOOK_SECRET=<assinatura_secreta_webhooks_modo_teste>
-   # Opcional:
+   BILLING_PROVIDER_MODE=official_sandbox_api
+   BILLING_MP_ACCESS_TOKEN=<access_token_conta_vendedora_teste>
+   BILLING_MP_COLLECTOR_ID=<user_id_numerico_conta_vendedora_teste>
    BILLING_MP_APPLICATION_ID=<application_id_numerico>
+   BILLING_MP_WEBHOOK_SECRET=<assinatura_secreta_webhooks_modo_teste>
    BILLING_MP_WEBHOOK_AUTH_MODE=hmac_strict
    ```
-2. Execute no PowerShell local (perfil `devessent`, conta `bf89f7f990af2c019abf8e7604db760d`):
+3. Execute no PowerShell local (perfil `devessent`, conta `bf89f7f990af2c019abf8e7604db760d`):
    ```powershell
    $env:CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"
-   $env:NEXT_PUBLIC_APP_URL = "https://devessent-platform-staging.devessent.workers.dev"
+   $env:NEXT_PUBLIC_APP_URL = "https://mp-sandbox-devessent-platform-staging.devessent.workers.dev"
    pnpm cf:build:staging
    pnpm cf:mp-sandbox-preview:staging
    ```
-3. Anote a **Preview URL** impressa (`https://<8chars>-devessent-platform-staging.devessent.workers.dev`), cadastre-a temporariamente como URL de Webhooks de Teste no painel Mercado Pago para homologar na Preview isolada (ou valide `Diagnosticar Provedor MP` em `/admin/comercial`) e **somente após aprovação final** execute `npx wrangler versions deploy --name devessent-platform-staging`.
+   O script pré-valida automaticamente `GET https://api.mercadopago.com/users/me` (`tags: ["test_user"]`, `site_id: "MLB"` e `id === BILLING_MP_COLLECTOR_ID`) **antes** de subir a Preview atômica. O Staging principal `7c984c38` permanece intocado.
 
 ### Etapa C — Como Confirmar Conclusão Sem Compartilhar Credenciais
 

@@ -11,6 +11,7 @@ import { spawn } from "child_process";
 import * as crypto from "crypto";
 import { createRequire } from "module";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as zlib from "zlib";
 import {
@@ -37,6 +38,8 @@ const FORBIDDEN_CLOUDFLARE_EMAILS = new Set([
   "hugogeeta.gamer@gmail.com", // E-mail da conta Cloudflare EJC — proibido
 ]);
 const EXPECTED_STAGING_WORKER_NAME = "devessent-platform-staging";
+const PREVIEW_ALIAS_NAME = "mp-sandbox";
+const PREVIEW_ALIAS_URL = `https://${PREVIEW_ALIAS_NAME}-${EXPECTED_STAGING_WORKER_NAME}.devessent.workers.dev`;
 
 type Subcommand =
   | "build"
@@ -665,9 +668,10 @@ async function runUploadPreviewVersion(): Promise<void> {
   const wranglerBin = getWranglerBin();
   await assertAuthorizedCloudflareAccount(wranglerBin);
 
-  console.log("🧪 DevEssent Platform — Upload de Versão Não-Ativa (Cloudflare Preview Version)");
+  console.log("🧪 DevEssent Platform — Upload de Versão Não-Ativa com Alias Fixo (Cloudflare Preview)");
   console.log(`   Conta CF    : ${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID} (DevEssent verificada)`);
   console.log(`   Worker alvo : ${EXPECTED_STAGING_WORKER_NAME} (sem alterar tráfego ativo)`);
+  console.log(`   Preview URL : ${PREVIEW_ALIAS_URL} (estável para callbacks e webhooks de teste)`);
   console.log(`   Supabase    : ${pub.supabaseHost} (${AUTHORIZED_STAGING_PROJECT_REF})`);
   console.log("   Segredos    : preservados no Worker; nenhuma credencial enviada no artefato");
 
@@ -677,8 +681,10 @@ async function runUploadPreviewVersion(): Promise<void> {
     "upload",
     "--config",
     generatedWranglerPath,
+    "--preview-alias",
+    PREVIEW_ALIAS_NAME,
     "--var",
-    `NEXT_PUBLIC_APP_URL:${pub.appUrl}`,
+    `NEXT_PUBLIC_APP_URL:${PREVIEW_ALIAS_URL}`,
     "--var",
     `NEXT_PUBLIC_SUPABASE_ANON_KEY:${pub.anonKey}`,
   ];
@@ -809,41 +815,8 @@ async function runPreviewMpSandbox(): Promise<void> {
   const wranglerBin = getWranglerBin();
   await assertAuthorizedCloudflareAccount(wranglerBin);
 
-  // Passo 1: Upload do código 6E.2C como versão não-ativa (garante base atualizada)
-  console.log("🧪 Passo 1/2 — Enviando código 6E.2C como versão não-ativa (wrangler versions upload)...");
-  const uploadExit = await new Promise<number>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        wranglerBin,
-        "versions",
-        "upload",
-        "--config",
-        generatedWranglerPath,
-        "--tag",
-        "fase-6e2c-code",
-        "--message",
-        "Fase 6E.2C base code for official MP Sandbox preview",
-        "--var",
-        `NEXT_PUBLIC_APP_URL:${pub.appUrl}`,
-        "--var",
-        `NEXT_PUBLIC_SUPABASE_ANON_KEY:${pub.anonKey}`,
-      ],
-      {
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
-          WRANGLER_SEND_METRICS: "false",
-        },
-      }
-    );
-    child.on("error", reject);
-    child.on("exit", (code) => resolve(code ?? 1));
-  });
-  if (uploadExit !== 0) process.exit(uploadExit);
-
-  // Passo 2: Patch atômico único via stdin com wrangler versions secret bulk (ZERO arquivos temporários, ZERO impressão de valores!)
+  // Upload ATÔMICO único: código 6E.2C + NEXT_PUBLIC_APP_URL estável + alias fixo `mp-sandbox` + segredos oficiais
+  // (usa arquivo efêmero 0600 em os.tmpdir() sobrescrito com zeros e removido em `finally` — zero persistência em disco/Git!)
   const bulkSecrets: Record<string, string> = {
     BILLING_PROVIDER_MODE: "official_sandbox_api",
     BILLING_MP_ENVIRONMENT: "sandbox",
@@ -854,42 +827,72 @@ async function runPreviewMpSandbox(): Promise<void> {
   if (mpWebhookSecret) bulkSecrets.BILLING_MP_WEBHOOK_SECRET = mpWebhookSecret;
   if (mpAppId) bulkSecrets.BILLING_MP_APPLICATION_ID = mpAppId;
 
-  console.log(
-    `🔐 Passo 2/2 — Criando versão Preview atômica com segredos oficiais via stdin (${Object.keys(bulkSecrets).join(", ")})...`
+  const ephemeralSecretsPath = path.join(
+    os.tmpdir(),
+    `devessent-mp-sbx-${process.pid}-${crypto.randomBytes(8).toString("hex")}.json`
   );
-  const bulkExit = await new Promise<number>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        wranglerBin,
-        "versions",
-        "secret",
-        "bulk",
-        "--name",
-        EXPECTED_STAGING_WORKER_NAME,
-        "--tag",
-        "fase-6e2c-mp-sandbox-preview",
-        "--message",
-        "Fase 6E.2C + official_sandbox_api secrets (non-active preview)",
-      ],
-      {
-        stdio: ["pipe", "inherit", "inherit"],
-        env: {
-          ...process.env,
-          CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
-          WRANGLER_SEND_METRICS: "false",
-        },
-      }
-    );
-    child.on("error", reject);
-    child.on("exit", (code) => resolve(code ?? 1));
-    child.stdin.write(JSON.stringify(bulkSecrets));
-    child.stdin.end();
-  });
-  if (bulkExit !== 0) process.exit(bulkExit);
 
   console.log(
-    "✅ Preview Version não-ativa criada com sucesso! O tráfego ativo de Staging permanece inalterado até execução explícita de `wrangler versions deploy`."
+    `🧪 Upload atômico Preview não-ativa (${PREVIEW_ALIAS_URL}) com segredos: ${Object.keys(bulkSecrets).join(", ")}`
+  );
+  console.log(`   Webhook URL fixa : ${PREVIEW_ALIAS_URL}/api/webhooks/billing/mercado_pago`);
+  console.log(`   Callback back_url: ${PREVIEW_ALIAS_URL}/dashboard/assinatura`);
+
+  let uploadExit = 1;
+  try {
+    const serialized = JSON.stringify(bulkSecrets);
+    fs.writeFileSync(ephemeralSecretsPath, serialized, { encoding: "utf-8", mode: 0o600 });
+
+    uploadExit = await new Promise<number>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          wranglerBin,
+          "versions",
+          "upload",
+          "--config",
+          generatedWranglerPath,
+          "--preview-alias",
+          PREVIEW_ALIAS_NAME,
+          "--secrets-file",
+          ephemeralSecretsPath,
+          "--tag",
+          "fase-6e2c-mp-sandbox-preview",
+          "--message",
+          "Fase 6E.2C + official_sandbox_api secrets (fixed mp-sandbox preview alias)",
+          "--var",
+          `NEXT_PUBLIC_APP_URL:${PREVIEW_ALIAS_URL}`,
+          "--var",
+          `NEXT_PUBLIC_SUPABASE_ANON_KEY:${pub.anonKey}`,
+        ],
+        {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
+            WRANGLER_SEND_METRICS: "false",
+          },
+        }
+      );
+      child.on("error", reject);
+      child.on("exit", (code) => resolve(code ?? 1));
+    });
+  } finally {
+    try {
+      if (fs.existsSync(ephemeralSecretsPath)) {
+        const size = fs.statSync(ephemeralSecretsPath).size;
+        fs.writeFileSync(ephemeralSecretsPath, Buffer.alloc(Math.max(size, 64), 0));
+        fs.rmSync(ephemeralSecretsPath, { force: true });
+      }
+    } catch {
+      // ignora erro secundário de limpeza
+    }
+  }
+
+  if (uploadExit !== 0) process.exit(uploadExit);
+
+  console.log(
+    `✅ Preview Version não-ativa criada com alias fixo ${PREVIEW_ALIAS_URL}! O tráfego ativo de Staging permanece inalterado até aprovação explícita.`
   );
 }
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BillingInvariants,
   buildBillingWebhookSignature,
   clearOfficialSandboxIdentityCache,
   MercadoPagoBillingProvider,
@@ -330,5 +331,58 @@ describe("Fase 6E.2C — [Mock Unitário] Adaptador Oficial Mercado Pago Sandbox
     const status = provider.getRuntimeStatus();
     expect(status.configValid).toBe(false);
     expect(status.diagnosticCode).toBe("MISSING_OFFICIAL_COLLECTOR_ID");
+  });
+
+  it("aplica ordenação temporal por last_modified (rejeita evento antigo e permite retorno legítimo de estado — §9E)", () => {
+    const t1 = "2026-11-24T10:00:00.000Z";
+    const t2 = "2026-11-24T10:05:00.000Z";
+    const t3 = "2026-11-24T10:10:00.000Z";
+
+    // Evento mais novo (T2 > T1) -> aceito
+    expect(
+      BillingInvariants.evaluatePreapprovalTemporalOrdering({
+        lastRecordedProviderUpdatedAt: t1,
+        incomingProviderUpdatedAt: t2,
+      }).isStale
+    ).toBe(false);
+
+    // Evento atrasado (T1 < T2) -> rejeitado como stale!
+    expect(
+      BillingInvariants.evaluatePreapprovalTemporalOrdering({
+        lastRecordedProviderUpdatedAt: t2,
+        incomingProviderUpdatedAt: t1,
+      }).isStale
+    ).toBe(true);
+
+    // Retorno legítimo de estado (active@T1 -> past_due@T2 -> active@T3) gera chaves distintas;
+    // reenvio idêntico de active@T3 gera a mesma chave (idempotente!).
+    const kActive1 = BillingInvariants.buildAuthoritativeIpnEventKey({
+      resourceType: "subscription_preapproval",
+      externalResourceId: "2c93808499a1b2c3",
+      providerUpdatedAt: t1,
+      authoritativeStatus: "active",
+    });
+    const kPaused2 = BillingInvariants.buildAuthoritativeIpnEventKey({
+      resourceType: "subscription_preapproval",
+      externalResourceId: "2c93808499a1b2c3",
+      providerUpdatedAt: t2,
+      authoritativeStatus: "past_due",
+    });
+    const kActive3 = BillingInvariants.buildAuthoritativeIpnEventKey({
+      resourceType: "subscription_preapproval",
+      externalResourceId: "2c93808499a1b2c3",
+      providerUpdatedAt: t3,
+      authoritativeStatus: "active",
+    });
+    const kActive3Replay = BillingInvariants.buildAuthoritativeIpnEventKey({
+      resourceType: "subscription_preapproval",
+      externalResourceId: "2c93808499a1b2c3",
+      providerUpdatedAt: t3,
+      authoritativeStatus: "active",
+    });
+
+    expect(kActive1).not.toBe(kActive3);
+    expect(kPaused2).not.toBe(kActive3);
+    expect(kActive3).toBe(kActive3Replay);
   });
 });

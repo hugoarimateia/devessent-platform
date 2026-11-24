@@ -281,16 +281,21 @@ export class BillingWebhookService {
     };
 
     // Quando a notificação chega no formato legado/IPN sem `body.id` nem `x-request-id`,
-    // deriva a chave idempotente a partir do estado autoritativo obtido na API oficial,
-    // evitando que transições legítimas (`pending -> authorized -> cancelled`) sejam
-    // descartadas como duplicadas enquanto repetições do mesmo estado permanecem idempotentes.
+    // deriva a chave idempotente incorporando o timestamp autoritativo do provedor + estado,
+    // evitando falsa deduplicação em retorno legítimo de estado (`active -> past_due -> active`)
+    // enquanto mantém 100% de idempotência para reenvios idênticos (§9E).
     const authoritativeStateToken =
       authoritative.resourceType === "subscription_preapproval"
         ? authoritative.subscriptionStatus || "unknown"
         : authoritative.invoiceStatus || "unknown";
     const effectiveExternalEventId = verifiedHeader.hasProviderEventId
       ? verifiedHeader.externalEventId
-      : `ipn:${authoritative.resourceType}:${authoritative.externalResourceId}:${authoritativeStateToken}`;
+      : BillingInvariants.buildAuthoritativeIpnEventKey({
+          resourceType: authoritative.resourceType,
+          externalResourceId: authoritative.externalResourceId,
+          providerUpdatedAt: authoritative.providerUpdatedAt,
+          authoritativeStatus: authoritativeStateToken,
+        });
 
     // 5. Localizar assinatura alvo exclusivamente na tabela billing_subscriptions
     let subRow:
@@ -308,11 +313,12 @@ export class BillingWebhookService {
           activated_at: string | null;
           payment_method_type: string;
           payment_method_label: string | null;
+          metadata: Json;
         }
       | null = null;
 
     const subSelectColumns =
-      "id, tenant_id, external_subscription_id, external_reference, contracted_amount_cents, status, scheduled_start_date, next_billing_date, authorized_at, activation_confirmed_at, activated_at, payment_method_type, payment_method_label";
+      "id, tenant_id, external_subscription_id, external_reference, contracted_amount_cents, status, scheduled_start_date, next_billing_date, authorized_at, activation_confirmed_at, activated_at, payment_method_type, payment_method_label, metadata";
 
     try {
       if (authoritative.externalSubscriptionId) {
@@ -415,11 +421,64 @@ export class BillingWebhookService {
       }
 
       const nowIso = new Date().toISOString();
+      const existingSubMeta =
+        subRow.metadata && typeof subRow.metadata === "object" && !Array.isArray(subRow.metadata)
+          ? (subRow.metadata as Record<string, unknown>)
+          : {};
+      const lastRecordedProviderUpdatedAt =
+        typeof existingSubMeta.lastProviderUpdatedAt === "string"
+          ? existingSubMeta.lastProviderUpdatedAt
+          : null;
+
+      // Proteção temporal contra eventos atrasados (§9E — não depende apenas do nome do estado!)
+      const temporal = BillingInvariants.evaluatePreapprovalTemporalOrdering({
+        lastRecordedProviderUpdatedAt,
+        incomingProviderUpdatedAt: authoritative.providerUpdatedAt,
+      });
+
+      if (temporal.isStale) {
+        await admin.from("billing_webhook_events").insert({
+          provider: params.providerName,
+          environment: "sandbox",
+          external_event_id: effectiveExternalEventId,
+          event_type: verifiedHeader.eventType,
+          resource_type: "subscription_preapproval",
+          external_resource_id: authoritative.externalResourceId,
+          subscription_id: subRow.id,
+          tenant_id: subRow.tenant_id,
+          signature_verified: verifiedHeader.signatureVerified,
+          processing_status: "ignored",
+          payload_summary: {
+            ...taggedSummary,
+            reason: "stale_provider_timestamp",
+            lastRecordedProviderUpdatedAt,
+            incomingProviderUpdatedAt: authoritative.providerUpdatedAt ?? null,
+          } as Json,
+          processed_at: nowIso,
+        });
+
+        return {
+          outcome: "ignored_out_of_order",
+          subscriptionId: subRow.id,
+          invoiceId: null,
+          invoiceStatus: null,
+          subscriptionStatus: subRow.status,
+        };
+      }
+
+      const nextSubMeta: Record<string, unknown> = {
+        ...existingSubMeta,
+        ...(authoritative.providerUpdatedAt
+          ? { lastProviderUpdatedAt: authoritative.providerUpdatedAt }
+          : {}),
+      };
+
       const today = nowIso.slice(0, 10);
       let nextSubStatus = subRow.status;
 
       if (authoritative.subscriptionStatus === "active" && subRow.status !== "cancelled") {
         // Autorização confirmada no provedor: só ativa se marco contratual + data agendada já atingidos!
+        // Também permite retorno legítimo `past_due -> active` quando autorizado novamente no provedor.
         const canActivateNow =
           Boolean(subRow.activation_confirmed_at) && subRow.scheduled_start_date <= today;
         nextSubStatus =
@@ -436,6 +495,7 @@ export class BillingWebhookService {
             authorized_at: subRow.authorized_at ?? nowIso,
             activated_at:
               nextSubStatus === "active" ? subRow.activated_at ?? nowIso : subRow.activated_at,
+            delinquent_since: nextSubStatus === "active" ? null : undefined,
             payment_method_type:
               subRow.payment_method_type === "unconfigured"
                 ? "credit_card"
@@ -445,6 +505,7 @@ export class BillingWebhookService {
               authoritative.paymentMethodLabel ||
               "Cartão de Crédito (Mercado Pago Sandbox)",
             next_billing_date: authoritative.dueDate || subRow.next_billing_date,
+            metadata: nextSubMeta as Json,
           })
           .eq("id", subRow.id);
       } else if (
@@ -459,6 +520,7 @@ export class BillingWebhookService {
             cancelled_at: nowIso,
             next_billing_date: null,
             cancellation_reason: "Cancelamento confirmado via webhook autoritativo do provedor.",
+            metadata: nextSubMeta as Json,
           })
           .eq("id", subRow.id);
       } else if (
@@ -473,7 +535,13 @@ export class BillingWebhookService {
           .update({
             status: "past_due",
             delinquent_since: nowIso,
+            metadata: nextSubMeta as Json,
           })
+          .eq("id", subRow.id);
+      } else if (authoritative.providerUpdatedAt) {
+        await admin
+          .from("billing_subscriptions")
+          .update({ metadata: nextSubMeta as Json })
           .eq("id", subRow.id);
       }
 

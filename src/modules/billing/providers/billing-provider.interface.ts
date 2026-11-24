@@ -57,6 +57,7 @@ export interface AuthoritativeBillingEvent {
   externalResourceId: string;
   externalSubscriptionId: string | null;
   externalReference: string | null;
+  providerUpdatedAt?: string | null;
   collectorId?: string | null;
   applicationId?: string | null;
   invoiceStatus: BillingInvoiceStatus | null;
