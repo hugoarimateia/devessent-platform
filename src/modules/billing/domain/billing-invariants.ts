@@ -389,6 +389,26 @@ export const BillingInvariants = {
   },
 
   /**
+   * Formata o motivo (`reason`) enviado a `POST /preapproval` respeitando o limite rígido
+   * de 60 caracteres imposto pela API oficial de Assinaturas do Mercado Pago.
+   */
+  buildPreapprovalReason(planName: string, tenantName: string): string {
+    const cleanPlan = planName.replace(/\s+/g, " ").trim() || "Plano SaaS";
+    const cleanTenant = tenantName.replace(/\s+/g, " ").trim();
+    const candidate = cleanTenant
+      ? `DevEssent — ${cleanPlan} (${cleanTenant})`
+      : `DevEssent — ${cleanPlan}`;
+    if (candidate.length <= 60) {
+      return candidate;
+    }
+    const shortCandidate = `DevEssent: ${cleanPlan}`;
+    if (shortCandidate.length <= 60) {
+      return shortCandidate;
+    }
+    return `${shortCandidate.slice(0, 57).trimEnd()}...`;
+  },
+
+  /**
    * Gera chave canônica de ciclo mensal/periódico (ex.: "2026-11") para idempotência de faturas.
    */
   buildBillingCycleKey(isoDate: string): string {

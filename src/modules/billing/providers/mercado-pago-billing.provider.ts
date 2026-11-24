@@ -813,20 +813,28 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     await this.verifyOfficialSandboxCredentials();
 
     const freq = mapCycleToMpFrequency(input.billingCycle);
-    const startDateIso = `${input.scheduledStartDate}T12:00:00.000Z`;
+    const scheduledDateIso = `${input.scheduledStartDate}T12:00:00.000Z`;
+    const scheduledDateMs = Date.parse(scheduledDateIso);
+    const minFutureStartMs = Date.now() + 5 * 60 * 1000;
+    const autoRecurring: Record<string, unknown> = {
+      frequency: freq.frequency,
+      frequency_type: freq.frequency_type,
+      transaction_amount: Number((input.amountCents / 100).toFixed(2)),
+      currency_id: "BRL",
+    };
+    // A API de Assinaturas do Mercado Pago rejeita `start_date` no passado.
+    // Quando a data agendada é hoje (ou já passou), omitimos `start_date` para início imediato após autorização.
+    if (Number.isFinite(scheduledDateMs) && scheduledDateMs > minFutureStartMs) {
+      autoRecurring.start_date = scheduledDateIso;
+    }
+
     const payload = {
-      reason: `DevEssent Platform — ${input.planName} (${input.tenantName})`,
+      reason: BillingInvariants.buildPreapprovalReason(input.planName, input.tenantName),
       external_reference: input.externalReference,
       payer_email: input.payerEmail,
       back_url: input.backUrl,
       status: "pending",
-      auto_recurring: {
-        frequency: freq.frequency,
-        frequency_type: freq.frequency_type,
-        start_date: startDateIso,
-        transaction_amount: Number((input.amountCents / 100).toFixed(2)),
-        currency_id: "BRL",
-      },
+      auto_recurring: autoRecurring,
     };
 
     const res = await mpApiFetch("/preapproval", {
@@ -952,7 +960,8 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     const qs = new URLSearchParams();
     if (params.preapprovalId) qs.set("preapproval_id", params.preapprovalId);
     if (params.externalReference) qs.set("external_reference", params.externalReference);
-    qs.set("limit", String(Math.min(Math.max(params.limit ?? 20, 1), 50)));
+    // A API oficial `GET /authorized_payments/search` aceita `limit` no máximo até 12 (valores > 12 retornam HTTP 400).
+    qs.set("limit", String(Math.min(Math.max(params.limit ?? 12, 1), 12)));
 
     const res = await mpApiFetch(`/authorized_payments/search?${qs.toString()}`, {
       method: "GET",
@@ -991,7 +1000,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
 
     const body: Record<string, unknown> = {};
     if (params.status) body.status = params.status;
-    if (params.reason) body.reason = params.reason;
+    if (params.reason) {
+      const cleanReason = params.reason.replace(/\s+/g, " ").trim();
+      body.reason = cleanReason.length <= 60 ? cleanReason : `${cleanReason.slice(0, 57).trimEnd()}...`;
+    }
     if (params.autoRecurringAmountCents !== undefined) {
       body.auto_recurring = {
         transaction_amount: Number((params.autoRecurringAmountCents / 100).toFixed(2)),
@@ -1009,8 +1021,15 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     );
 
     if (!res.ok) {
+      let mpMessage = "";
+      try {
+        const errBody = (await res.json()) as { message?: string; error?: string };
+        mpMessage = errBody.message || errBody.error || "";
+      } catch {
+        // ignora parse de erro
+      }
       throw new ValidationError(
-        `Falha ao atualizar assinatura no Mercado Pago Sandbox via PUT /preapproval/${params.externalSubscriptionId} (HTTP ${res.status}).`
+        `Falha ao atualizar assinatura no Mercado Pago Sandbox via PUT /preapproval/${params.externalSubscriptionId} (HTTP ${res.status}${mpMessage ? `: ${mpMessage}` : ""}).`
       );
     }
 
@@ -1048,10 +1067,11 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     externalSubscriptionId: string;
     reason: string;
   }): Promise<{ cancelled: boolean }> {
+    // No Mercado Pago `PUT /preapproval/{id}`, o campo `reason` é o título da assinatura (máx. 60 chars),
+    // não o motivo de cancelamento (que permanece auditado em `billing_subscriptions.cancellation_reason`).
     await this.updateExternalSubscription({
       externalSubscriptionId: params.externalSubscriptionId,
       status: "cancelled",
-      reason: params.reason,
     });
     return { cancelled: true };
   }

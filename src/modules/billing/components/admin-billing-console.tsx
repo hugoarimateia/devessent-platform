@@ -897,6 +897,24 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
                         >
                           Agendar Cancelamento
                         </button>
+
+                        <button
+                          type="button"
+                          disabled={busy}
+                          data-testid="billing-cancel-immediate-btn"
+                          onClick={() =>
+                            runAction(() =>
+                              cancelBillingSubscriptionAction({
+                                subscriptionId: sub.id,
+                                mode: "immediate",
+                                reason: "Cancelamento imediato solicitado pelo administrador DevEssent",
+                              })
+                            )
+                          }
+                          className="px-3 py-1.5 rounded-lg border border-rose-600/40 bg-rose-600 text-white text-xs font-semibold hover:brightness-105 cursor-pointer disabled:opacity-50"
+                        >
+                          Cancelar Imediatamente
+                        </button>
                       </div>
                     )}
                   </div>

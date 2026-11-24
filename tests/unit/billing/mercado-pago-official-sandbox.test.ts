@@ -385,4 +385,93 @@ describe("Fase 6E.2C — [Mock Unitário] Adaptador Oficial Mercado Pago Sandbox
     expect(kPaused2).not.toBe(kActive3);
     expect(kActive3).toBe(kActive3Replay);
   });
+
+  it("respeita limites oficiais da API Mercado Pago: reason <= 60 chars, start_date não retroativa e authorized_payments limit <= 12", async () => {
+    configureOfficialSandboxEnv();
+    const provider = new MercadoPagoBillingProvider();
+
+    let capturedCreateBody: Record<string, unknown> | null = null;
+    let capturedAuthPayUrl = "";
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/users/me")) {
+        return new Response(
+          JSON.stringify({ id: 987654321, site_id: "MLB", tags: ["test_user"] }),
+          { status: 200 }
+        );
+      }
+      if (url.endsWith("/preapproval") && init?.method === "POST") {
+        capturedCreateBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            id: "preapp-limit-check-01",
+            status: "pending",
+            collector_id: 987654321,
+            application_id: 444455556666,
+            live_mode: false,
+            init_point: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_id=preapp-limit-check-01",
+          }),
+          { status: 201 }
+        );
+      }
+      if (url.includes("/authorized_payments/search")) {
+        capturedAuthPayUrl = url;
+        return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await provider.createRecurringAuthorization({
+      subscriptionId: "33333333-3333-4333-8333-333333333333",
+      tenantId: "22222222-2222-4222-8222-222222222222",
+      tenantName: "Ateliê Demonstrativo Ultra Completo Ltda",
+      planName: "Plano Comercial Enterprise Profissional Homologação Oficial 6E.2C",
+      externalReference: "devessent:saas:atelie:33333333",
+      amountCents: 1990,
+      currency: "BRL",
+      billingCycle: "monthly",
+      scheduledStartDate: "2020-01-01", // data no passado -> omitir start_date!
+      payerEmail: "test_user_9999@testuser.com",
+      backUrl: "https://mp-sandbox-devessent-platform-staging.devessent.workers.dev/dashboard/assinatura",
+    });
+
+    expect(capturedCreateBody).not.toBeNull();
+    expect(String(capturedCreateBody!.reason).length).toBeLessThanOrEqual(60);
+    expect((capturedCreateBody!.auto_recurring as Record<string, unknown>).start_date).toBeUndefined();
+
+    await provider.searchAuthorizedPayments({
+      preapprovalId: "preapp-limit-check-01",
+      limit: 50,
+    });
+    expect(capturedAuthPayUrl).toContain("limit=12");
+
+    let capturedCancelBody: Record<string, unknown> | null = null;
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/users/me")) {
+        return new Response(
+          JSON.stringify({ id: 987654321, site_id: "MLB", tags: ["test_user"] }),
+          { status: 200 }
+        );
+      }
+      if (url.endsWith("/preapproval/preapp-limit-check-01") && init?.method === "PUT") {
+        capturedCancelBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            id: "preapp-limit-check-01",
+            status: "cancelled",
+            collector_id: 987654321,
+            live_mode: false,
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await provider.cancelExternalSubscription({
+      externalSubscriptionId: "preapp-limit-check-01",
+      reason: "Cancelamento imediato solicitado pelo administrador DevEssent (>60 chars)",
+    });
+    expect(capturedCancelBody).toEqual({ status: "cancelled" });
+  });
 });

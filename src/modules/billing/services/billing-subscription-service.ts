@@ -1188,6 +1188,15 @@ export class BillingSubscriptionService {
     const today = checkedAt.slice(0, 10);
     const prevStatus = sub.status as BillingSubscriptionStatus;
     let newStatus: BillingSubscriptionStatus = prevStatus;
+    const existingMeta =
+      sub.metadata && typeof sub.metadata === "object" && !Array.isArray(sub.metadata)
+        ? (sub.metadata as Record<string, unknown>)
+        : {};
+    const mergedMeta: Json = {
+      ...existingMeta,
+      ...(extSub.providerUpdatedAt ? { lastProviderUpdatedAt: extSub.providerUpdatedAt } : {}),
+      lastManualSyncAt: checkedAt,
+    } as Json;
 
     if (extSub.subscriptionStatus === "active" && prevStatus !== "cancelled") {
       const canActivateNow = Boolean(sub.activation_confirmed_at) && sub.scheduled_start_date <= today;
@@ -1211,6 +1220,7 @@ export class BillingSubscriptionService {
             extSub.paymentMethodLabel ||
             "Cartão de Crédito (Mercado Pago Sandbox)",
           next_billing_date: extSub.dueDate || sub.next_billing_date,
+          metadata: mergedMeta,
         })
         .eq("id", sub.id);
     } else if (extSub.subscriptionStatus === "cancelled" && prevStatus !== "cancelled") {
@@ -1222,6 +1232,7 @@ export class BillingSubscriptionService {
           cancelled_at: checkedAt,
           next_billing_date: null,
           cancellation_reason: "Cancelamento confirmado por consulta autoritativa no Mercado Pago.",
+          metadata: mergedMeta,
         })
         .eq("id", sub.id);
     } else if (
@@ -1235,7 +1246,13 @@ export class BillingSubscriptionService {
         .update({
           status: "past_due",
           delinquent_since: sub.delinquent_since ?? checkedAt,
+          metadata: mergedMeta,
         })
+        .eq("id", sub.id);
+    } else if (extSub.providerUpdatedAt) {
+      await admin
+        .from("billing_subscriptions")
+        .update({ metadata: mergedMeta })
         .eq("id", sub.id);
     }
 
@@ -1257,10 +1274,10 @@ export class BillingSubscriptionService {
       });
     }
 
-    // 2. Consultar pagamentos autorizados (`GET /authorized_payments/search`) e reconciliar idempotentemente
+    // 2. Consultar pagamentos autorizados (`GET /authorized_payments/search`, limite máximo MP = 12) e reconciliar idempotentemente
     const authorizedPayments = await provider.searchAuthorizedPayments({
       preapprovalId: sub.external_subscription_id,
-      limit: 20,
+      limit: 12,
     });
 
     let syncedCount = 0;
