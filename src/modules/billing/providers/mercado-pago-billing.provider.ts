@@ -514,6 +514,8 @@ function mapMpPaymentPayloadToEvent(
 ): AuthoritativeBillingEvent {
   const id = String(data.id ?? fallbackId);
   const metadata = (data.metadata ?? {}) as Record<string, unknown>;
+  const poi = (data.point_of_interaction ?? {}) as Record<string, unknown>;
+  const txData = (poi.transaction_data ?? {}) as Record<string, unknown>;
   const rawStatus = typeof data.status === "string" ? data.status : "pending";
   const statusDetail = typeof data.status_detail === "string" ? data.status_detail : null;
   const amountFloat = Number(data.transaction_amount ?? 0);
@@ -525,9 +527,11 @@ function mapMpPaymentPayloadToEvent(
   const preapprovalId =
     typeof metadata.preapproval_id === "string"
       ? metadata.preapproval_id
-      : typeof data.preapproval_id === "string"
-        ? data.preapproval_id
-        : null;
+      : typeof txData.subscription_id === "string"
+        ? txData.subscription_id
+        : typeof data.preapproval_id === "string"
+          ? data.preapproval_id
+          : null;
 
   return {
     provider: "mercado_pago",
@@ -1114,9 +1118,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       throw new ValidationError("Identificador do recurso ausente no webhook Billing.");
     }
 
+    const hasProviderEventId = Boolean(bodyObj.id || xRequestId);
     const externalEventId = bodyObj.id
       ? String(bodyObj.id)
-      : `${resourceType}:${dataId}:${xRequestId || "no-req-id"}`;
+      : `${resourceType}:${dataId}:${xRequestId || "ipn-trigger"}`;
 
     // Modo fallback autoritativo (somente quando explicitamente habilitado em official_sandbox_api
     // E o provedor não enviou x-signature): nunca finge que HMAC foi validado!
@@ -1124,6 +1129,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       if (creds.isOfficialSandboxApi && creds.webhookAuthMode === "authoritative_fallback") {
         return {
           externalEventId,
+          hasProviderEventId,
           eventType: bodyObj.action || rawType,
           resourceType,
           externalResourceId: dataId,
@@ -1188,6 +1194,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
 
     return {
       externalEventId,
+      hasProviderEventId,
       eventType: bodyObj.action || rawType,
       resourceType,
       externalResourceId: dataId,

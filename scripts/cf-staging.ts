@@ -44,16 +44,23 @@ type Subcommand =
   | "verify-bundle"
   | "sync-secrets"
   | "upload-preview"
+  | "preview-mp-sandbox"
   | "deploy";
 const subcommand = (process.argv[2] || "") as Subcommand;
 
 if (
-  !["build", "preview", "verify-bundle", "sync-secrets", "upload-preview", "deploy"].includes(
-    subcommand
-  )
+  ![
+    "build",
+    "preview",
+    "verify-bundle",
+    "sync-secrets",
+    "upload-preview",
+    "preview-mp-sandbox",
+    "deploy",
+  ].includes(subcommand)
 ) {
   console.error(
-    "Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|sync-secrets|upload-preview|deploy]"
+    "Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|sync-secrets|upload-preview|preview-mp-sandbox|deploy]"
   );
   process.exit(1);
 }
@@ -694,6 +701,198 @@ async function runUploadPreviewVersion(): Promise<void> {
   }
 }
 
+/**
+ * Publica uma Preview Version NÃO-ATIVA contendo atomica e garantidamente:
+ * - Código 6E.2C verificado (`dist/server/wrangler.json`)
+ * - Bindings Supabase e segredos anteriores preservados
+ * - Credenciais oficiais Mercado Pago Sandbox pré-validadas em `GET /users/me` (`test_user` + `MLB` + `collector_id`)
+ * - Seleção explícita `BILLING_PROVIDER_MODE=official_sandbox_api` e `BILLING_MP_ENVIRONMENT=sandbox`
+ *
+ * Nunca chama `wrangler versions deploy`: mantém o tráfego ativo do Staging 100% intocado.
+ */
+async function runPreviewMpSandbox(): Promise<void> {
+  verifyBuiltBundle();
+
+  const generatedConfig = JSON.parse(
+    fs.readFileSync(generatedWranglerPath, "utf-8")
+  ) as { name?: string; account_id?: string };
+  if (generatedConfig.name !== EXPECTED_STAGING_WORKER_NAME) {
+    throw new Error(
+      `BLOQUEIO DE SEGURANÇA: Worker alvo inválido ("${generatedConfig.name}"). Esperado exclusivamente "${EXPECTED_STAGING_WORKER_NAME}".`
+    );
+  }
+
+  const validated = loadAndValidateStagingEnv({ requireServiceRole: true });
+  const pub = resolveStagingBuildPublicEnv();
+  const rawVars = validated.rawVars;
+
+  const mpToken = rawVars.BILLING_MP_ACCESS_TOKEN?.trim() || "";
+  const mpWebhookSecret = rawVars.BILLING_MP_WEBHOOK_SECRET?.trim() || "";
+  const mpCollectorId = rawVars.BILLING_MP_COLLECTOR_ID?.trim() || "";
+  const mpAppId = rawVars.BILLING_MP_APPLICATION_ID?.trim() || "";
+  const mpEnv = (rawVars.BILLING_MP_ENVIRONMENT?.trim() || "sandbox").toLowerCase();
+  const mpWebhookAuthMode = (
+    rawVars.BILLING_MP_WEBHOOK_AUTH_MODE?.trim() || "hmac_strict"
+  ).toLowerCase();
+
+  if (mpEnv !== "sandbox") {
+    throw new Error(
+      `BLOQUEIO FAIL-CLOSED: BILLING_MP_ENVIRONMENT deve ser 'sandbox' (recebido: '${mpEnv}').`
+    );
+  }
+  if (!mpToken || mpToken.length < 24 || (!mpToken.startsWith("APP_USR-") && !mpToken.startsWith("TEST-"))) {
+    throw new Error(
+      "BILLING_MP_ACCESS_TOKEN ausente ou inválido em .env.staging.local. Preencha localmente a credencial da Conta Vendedora de Teste DevEssent (sem expor em chat/Git)."
+    );
+  }
+  if (!mpCollectorId || !/^\d+$/.test(mpCollectorId)) {
+    throw new Error(
+      "BILLING_MP_COLLECTOR_ID numérico (User ID da Conta Vendedora de Teste DevEssent) obrigatório em .env.staging.local."
+    );
+  }
+  if (mpWebhookAuthMode !== "hmac_strict" && mpWebhookAuthMode !== "authoritative_fallback") {
+    throw new Error(
+      `BILLING_MP_WEBHOOK_AUTH_MODE inválido ('${mpWebhookAuthMode}'). Use 'hmac_strict' ou 'authoritative_fallback'.`
+    );
+  }
+  if (mpWebhookAuthMode === "hmac_strict" && (!mpWebhookSecret || mpWebhookSecret.length < 16)) {
+    throw new Error(
+      "BILLING_MP_WEBHOOK_SECRET (>= 16 chars) obrigatório em .env.staging.local no modo hmac_strict."
+    );
+  }
+
+  // Pré-validação autoritativa local em GET /users/me ANTES de tocar no Cloudflare
+  console.log("🔎 Validando credencial Mercado Pago em GET https://api.mercadopago.com/users/me ...");
+  const meRes = await fetch("https://api.mercadopago.com/users/me", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${mpToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!meRes.ok) {
+    throw new Error(
+      `BLOQUEIO FAIL-CLOSED: Mercado Pago recusou BILLING_MP_ACCESS_TOKEN em GET /users/me (HTTP ${meRes.status}). Nenhum segredo foi enviado ao Cloudflare.`
+    );
+  }
+  const meData = (await meRes.json()) as {
+    id?: string | number;
+    site_id?: string;
+    tags?: unknown;
+  };
+  const tags = Array.isArray(meData.tags)
+    ? meData.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase())
+    : [];
+  const hasTestUserTag = tags.includes("test_user");
+  const resolvedId = meData.id !== undefined && meData.id !== null ? String(meData.id).trim() : "";
+  const resolvedSite = (meData.site_id || "").trim().toUpperCase();
+
+  if (!hasTestUserTag) {
+    throw new Error(
+      "BLOQUEIO FAIL-CLOSED: A credencial em BILLING_MP_ACCESS_TOKEN NÃO possui tag 'test_user' em GET /users/me. Pode ser uma conta real de produção! Operação abortada antes do upload."
+    );
+  }
+  if (resolvedSite !== "MLB") {
+    throw new Error(
+      `BLOQUEIO FAIL-CLOSED: Conta de teste pertence ao site_id '${resolvedSite}' (obrigatório 'MLB' Brasil/BRL).`
+    );
+  }
+  if (resolvedId !== mpCollectorId) {
+    throw new Error(
+      `BLOQUEIO FAIL-CLOSED: GET /users/me retornou collector_id '${resolvedId}', divergente de BILLING_MP_COLLECTOR_ID='${mpCollectorId}'.`
+    );
+  }
+  console.log(
+    `✅ Credencial comprovada via GET /users/me: Conta de Teste oficial Brasil (MLB · collector #${resolvedId} · tag test_user confirmada).`
+  );
+
+  const wranglerBin = getWranglerBin();
+  await assertAuthorizedCloudflareAccount(wranglerBin);
+
+  // Passo 1: Upload do código 6E.2C como versão não-ativa (garante base atualizada)
+  console.log("🧪 Passo 1/2 — Enviando código 6E.2C como versão não-ativa (wrangler versions upload)...");
+  const uploadExit = await new Promise<number>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        wranglerBin,
+        "versions",
+        "upload",
+        "--config",
+        generatedWranglerPath,
+        "--tag",
+        "fase-6e2c-code",
+        "--message",
+        "Fase 6E.2C base code for official MP Sandbox preview",
+        "--var",
+        `NEXT_PUBLIC_APP_URL:${pub.appUrl}`,
+        "--var",
+        `NEXT_PUBLIC_SUPABASE_ANON_KEY:${pub.anonKey}`,
+      ],
+      {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
+          WRANGLER_SEND_METRICS: "false",
+        },
+      }
+    );
+    child.on("error", reject);
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+  if (uploadExit !== 0) process.exit(uploadExit);
+
+  // Passo 2: Patch atômico único via stdin com wrangler versions secret bulk (ZERO arquivos temporários, ZERO impressão de valores!)
+  const bulkSecrets: Record<string, string> = {
+    BILLING_PROVIDER_MODE: "official_sandbox_api",
+    BILLING_MP_ENVIRONMENT: "sandbox",
+    BILLING_MP_ACCESS_TOKEN: mpToken,
+    BILLING_MP_COLLECTOR_ID: mpCollectorId,
+    BILLING_MP_WEBHOOK_AUTH_MODE: mpWebhookAuthMode,
+  };
+  if (mpWebhookSecret) bulkSecrets.BILLING_MP_WEBHOOK_SECRET = mpWebhookSecret;
+  if (mpAppId) bulkSecrets.BILLING_MP_APPLICATION_ID = mpAppId;
+
+  console.log(
+    `🔐 Passo 2/2 — Criando versão Preview atômica com segredos oficiais via stdin (${Object.keys(bulkSecrets).join(", ")})...`
+  );
+  const bulkExit = await new Promise<number>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        wranglerBin,
+        "versions",
+        "secret",
+        "bulk",
+        "--name",
+        EXPECTED_STAGING_WORKER_NAME,
+        "--tag",
+        "fase-6e2c-mp-sandbox-preview",
+        "--message",
+        "Fase 6E.2C + official_sandbox_api secrets (non-active preview)",
+      ],
+      {
+        stdio: ["pipe", "inherit", "inherit"],
+        env: {
+          ...process.env,
+          CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
+          WRANGLER_SEND_METRICS: "false",
+        },
+      }
+    );
+    child.on("error", reject);
+    child.on("exit", (code) => resolve(code ?? 1));
+    child.stdin.write(JSON.stringify(bulkSecrets));
+    child.stdin.end();
+  });
+  if (bulkExit !== 0) process.exit(bulkExit);
+
+  console.log(
+    "✅ Preview Version não-ativa criada com sucesso! O tráfego ativo de Staging permanece inalterado até execução explícita de `wrangler versions deploy`."
+  );
+}
+
 (async () => {
   try {
     if (subcommand === "build") {
@@ -706,6 +905,8 @@ async function runUploadPreviewVersion(): Promise<void> {
       await runSyncSecrets();
     } else if (subcommand === "upload-preview") {
       await runUploadPreviewVersion();
+    } else if (subcommand === "preview-mp-sandbox") {
+      await runPreviewMpSandbox();
     } else if (subcommand === "deploy") {
       await runDeploy();
     }

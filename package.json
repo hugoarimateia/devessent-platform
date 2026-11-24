@@ -13,6 +13,7 @@
     "cf:verify:staging": "tsx scripts/cf-staging.ts verify-bundle",
     "cf:preview:staging": "tsx scripts/cf-staging.ts preview",
     "cf:preview-version:staging": "tsx scripts/cf-staging.ts upload-preview",
+    "cf:mp-sandbox-preview:staging": "tsx scripts/cf-staging.ts preview-mp-sandbox",
     "cf:secrets:staging": "tsx scripts/cf-staging.ts sync-secrets",
     "cf:deploy:staging": "tsx scripts/cf-staging.ts deploy",
     "dev:cloud": "tsx scripts/run-with-mode.ts supabase dev",

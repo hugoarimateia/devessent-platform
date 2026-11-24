@@ -192,7 +192,9 @@ describe("Fase 6E.2C — [Mock Unitário] Adaptador Oficial Mercado Pago Sandbox
             collector_id: 987654321,
             live_mode: false,
             date_created: "2026-11-23T12:00:00.000Z",
-            metadata: { preapproval_id: "2c93808499a1b2c3" },
+            point_of_interaction: {
+              transaction_data: { subscription_id: "2c93808499a1b2c3" },
+            },
           }),
           { status: 200 }
         );
@@ -285,21 +287,36 @@ describe("Fase 6E.2C — [Mock Unitário] Adaptador Oficial Mercado Pago Sandbox
       })
     ).toThrow(/user_id/i);
 
-    // 2. Fallback autoritativo explícito sem x-signature registra signatureVerified=false (nunca simula HMAC!)
+    // 2. Fallback autoritativo explícito sem x-signature e sem body.id/x-request-id (IPN legado)
+    //    registra signatureVerified=false e hasProviderEventId=false (evita deduplicar transições pending -> authorized!)
     process.env.BILLING_MP_WEBHOOK_AUTH_MODE = "authoritative_fallback";
     const fallbackParsed = provider.validateWebhookSignature({
       headers: {},
-      query: { "data.id": "2c93808499a1b2c3", type: "subscription_preapproval" },
-      rawBody: JSON.stringify({
-        id: "evt-ipn-fallback-01",
-        type: "subscription_preapproval",
-        live_mode: false,
-        user_id: "987654321",
-        data: { id: "2c93808499a1b2c3" },
-      }),
+      query: { id: "2c93808499a1b2c3", topic: "preapproval" },
+      rawBody: "",
     });
     expect(fallbackParsed.signatureVerified).toBe(false);
+    expect(fallbackParsed.hasProviderEventId).toBe(false);
+    expect(fallbackParsed.resourceType).toBe("subscription_preapproval");
     expect(fallbackParsed.authMethod).toBe("authoritative_fallback");
+
+    // Se x-signature vier presente mesmo em authoritative_fallback, assinatura inválida continua rejeitada (401)!
+    expect(() =>
+      provider.validateWebhookSignature({
+        headers: {
+          "x-signature": `ts=${tsMs},v1=${"0".repeat(64)}`,
+          "x-request-id": "req-invalid-in-fallback",
+        },
+        query: { "data.id": "2c93808499a1b2c3", type: "subscription_preapproval" },
+        rawBody: JSON.stringify({
+          id: "evt-bad-sig-fallback",
+          type: "subscription_preapproval",
+          live_mode: false,
+          user_id: "987654321",
+          data: { id: "2c93808499a1b2c3" },
+        }),
+      })
+    ).toThrow(/inválida/i);
 
     // 3. Indisponibilidade HTTP 503 do Mercado Pago propaga ServiceUnavailableError (statusCode=503)
     globalThis.fetch = vi.fn().mockResolvedValue(new Response("Upstream Down", { status: 503 })) as unknown as typeof fetch;

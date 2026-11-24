@@ -73,6 +73,7 @@ export interface AuthoritativeBillingEvent {
 
 export interface VerifiedBillingWebhookHeader {
   externalEventId: string;
+  hasProviderEventId: boolean;
   eventType: string;
   resourceType: BillingWebhookResourceType;
   externalResourceId: string;

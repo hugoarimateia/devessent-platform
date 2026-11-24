@@ -84,6 +84,14 @@ A auditoria inicial frente à documentação oficial atualizada do Mercado Pago 
 - **Fluxo de autorização e estados:**
   - O retorno do navegador (`back_url`) **nunca** é tratado como confirmação financeira; em `official_sandbox_api`, a autorização simulada pelo painel local é bloqueada (`403`) e o cliente utiliza o link oficial (`Autorizar no Mercado Pago (Sandbox)`).
   - Máquina de estados preservada: `awaiting_authorization` → `awaiting_activation` (quando autorizado antes da data contratual ou do marco de entrega) → `active` → `pending_payment` / `past_due` (sem jamais alterar `tenants.status` nem derrubar a vitrine) → `in_regularization` → `cancel_scheduled` → `cancelled`.
+- **Restrições oficiais confirmadas para Webhooks em Assinaturas sem plano (`POST /preapproval`):**
+  - `POST /preapproval` **não aceita `notification_url`** no corpo JSON (diferente de Checkout Pro `/checkout/preferences` ou `/v1/payments`; enviar `notification_url` em `/preapproval` é ignorado).
+  - As notificações devem ser habilitadas globalmente no painel **Suas integrações → Webhooks → Configurar notificações → Modo de teste** da **mesma aplicação proprietária do Access Token da Conta Vendedora de Teste** (configurar o webhook em uma aplicação diferente daquela que emitiu o token impede o recebimento ou invalida o `Secret Key`).
+  - **Tópicos e `x-signature`:** Webhooks modernos configurados no painel para `subscription_preapproval`, `subscription_authorized_payment` e `payment` enviam `POST` JSON com `x-signature` (`ts` em 10 ou 13 dígitos + `v1` HMAC-SHA256) e `x-request-id`. Contudo, notificações legadas/IPN (ex.: `?id=...&topic=preapproval` com corpo vazio) podem chegar sem `x-signature`, `body.id` ou `x-request-id`.
+  - **Correção aplicada na continuação 6E.2C:**
+    1. Quando `x-signature` está presente, a assinatura HMAC-SHA256 é **sempre** validada estritamente (`401` se inválida — inclusive em `authoritative_fallback`).
+    2. Quando uma notificação sem `body.id`/`x-request-id` chega sob `BILLING_MP_WEBHOOK_AUTH_MODE=authoritative_fallback`, o sistema registra `signature_verified = false` honestamente, consulta o estado autoritativo na API oficial (`GET /users/me` + `GET /preapproval/{id}` ou `/authorized_payments/{id}` ou `/v1/payments/{id}` + verificação de `live_mode`, `collector_id`, `application_id` e `external_reference`) e deriva a chave idempotente com o estado autoritativo (`ipn:<resourceType>:<id>:<status>`), garantindo que transições reais `pending → authorized → cancelled` nunca sejam descartadas como duplicadas enquanto reenvios do mesmo estado permanecem idempotentes.
+    3. Em `GET /v1/payments/{id}`, o vínculo com a assinatura é resolvido tanto por `metadata.preapproval_id` quanto por `point_of_interaction.transaction_data.subscription_id`, `preapproval_id` e `external_reference`.
 - **Reconciliação de Webhooks (`/api/webhooks/billing/mercado_pago`):**
   - Valida rate limit, tamanho (≤ 64 KB), `live_mode !== true`, assinatura HMAC-SHA256 (`ts` em segundos ou milissegundos, janela ±5 min), titularidade (`collector_id`/`application_id`), consulta autoritativa na API oficial, correspondência estrita de `external_reference` e `external_subscription_id` (proteção cross-tenant) e executa `reconcile_billing_invoice_tx` (lock pessimista + idempotência + proteção contra eventos fora de ordem).
   - Em falhas temporárias da API Mercado Pago ou do Supabase, retorna **HTTP `503`** (`Retry-After: 30`) e grava `processing_status = 'error'` com `retryable: true` para reprocessamento seguro.
@@ -139,27 +147,31 @@ A auditoria inicial frente à documentação oficial atualizada do Mercado Pago 
    - **Eventos:** marque **Planos e assinaturas** (`subscription_preapproval`, `subscription_authorized_payment`, `subscription_preapproval_plan`) e **Pagamentos** (`payment`).
    - Salve e copie a **Assinatura secreta** (`BILLING_MP_WEBHOOK_SECRET`).
 
-### Etapa B — Configurar Secrets Privadamente em Versão Não-Ativa no Cloudflare Staging
+### Etapa B — Procedimento Simples e Atômico para Criar Preview Version Oficial (Sem Expor Segredos e Sem Afetar Staging Ativo)
 
-No PowerShell local autenticado no perfil `devessent` (conta `bf89f7f990af2c019abf8e7604db760d`), utilize **`wrangler versions secret put`** para gravar cada segredo em uma nova versão **sem alterar o tráfego ativo imediatamente**:
+> **Comportamento comprovado no Wrangler `4.165.0`:** `wrangler versions secret put` e `wrangler versions secret bulk` executam `PATCH /accounts/{accountId}/workers/workers/{scriptName}/versions/latest`, clonando a **última versão enviada** (código + assets + vars Supabase + segredos já existentes) sem ativá-la no tráfego principal. Para evitar versões intermediárias quebradas ou baseadas acidentalmente na revisão antiga `7c984c38`, utilize o comando atômico `pnpm cf:mp-sandbox-preview:staging`, que:
+> 1. Pré-valida localmente `BILLING_MP_ACCESS_TOKEN` em `GET https://api.mercadopago.com/users/me` (`tags: ["test_user"]`, `site_id: "MLB"` e `id === BILLING_MP_COLLECTOR_ID` — falha fechado antes de enviar qualquer segredo ao Cloudflare!).
+> 2. Envia o código 6E.2C (`wrangler versions upload --tag fase-6e2c-code`).
+> 3. Aplica todos os segredos oficiais em **um único `wrangler versions secret bulk` via stdin** (`--tag fase-6e2c-mp-sandbox-preview`), sem arquivos temporários e sem imprimir valores, **preservando integralmente** a versão ativa `7c984c38`, os bindings Supabase e os 4 segredos existentes.
 
-```powershell
-$env:CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"
-
-# 1. Gravar credenciais oficiais de Sandbox sem publicar automaticamente:
-npx wrangler versions secret put BILLING_MP_ACCESS_TOKEN --name devessent-platform-staging
-npx wrangler versions secret put BILLING_MP_WEBHOOK_SECRET --name devessent-platform-staging
-npx wrangler versions secret put BILLING_MP_COLLECTOR_ID --name devessent-platform-staging
-npx wrangler versions secret put BILLING_MP_APPLICATION_ID --name devessent-platform-staging
-npx wrangler versions secret put BILLING_MP_ENVIRONMENT --name devessent-platform-staging      # valor: sandbox
-npx wrangler versions secret put BILLING_PROVIDER_MODE --name devessent-platform-staging       # valor: official_sandbox_api
-
-# 2. Testar na Preview URL gerada (ex.: clicar em "Diagnosticar Provedor MP" em /admin/comercial)
-#    Confirmar que GET /users/me retorna "Conta de Teste oficial Brasil (MLB · collector #...)".
-
-# 3. Somente após confirmar o diagnóstico na Preview URL, promover para Staging:
-npx wrangler versions deploy --name devessent-platform-staging
-```
+1. Adicione localmente em `.env.staging.local` (arquivo ignorado pelo Git; jamais compartilhar no chat):
+   ```dotenv
+   BILLING_MP_ENVIRONMENT=sandbox
+   BILLING_MP_ACCESS_TOKEN=<access_token_da_conta_vendedora_de_teste>
+   BILLING_MP_COLLECTOR_ID=<user_id_numerico_da_conta_vendedora_de_teste>
+   BILLING_MP_WEBHOOK_SECRET=<assinatura_secreta_webhooks_modo_teste>
+   # Opcional:
+   BILLING_MP_APPLICATION_ID=<application_id_numerico>
+   BILLING_MP_WEBHOOK_AUTH_MODE=hmac_strict
+   ```
+2. Execute no PowerShell local (perfil `devessent`, conta `bf89f7f990af2c019abf8e7604db760d`):
+   ```powershell
+   $env:CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"
+   $env:NEXT_PUBLIC_APP_URL = "https://devessent-platform-staging.devessent.workers.dev"
+   pnpm cf:build:staging
+   pnpm cf:mp-sandbox-preview:staging
+   ```
+3. Anote a **Preview URL** impressa (`https://<8chars>-devessent-platform-staging.devessent.workers.dev`), cadastre-a temporariamente como URL de Webhooks de Teste no painel Mercado Pago para homologar na Preview isolada (ou valide `Diagnosticar Provedor MP` em `/admin/comercial`) e **somente após aprovação final** execute `npx wrangler versions deploy --name devessent-platform-staging`.
 
 ### Etapa C — Como Confirmar Conclusão Sem Compartilhar Credenciais
 

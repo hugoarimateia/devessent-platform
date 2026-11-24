@@ -280,6 +280,18 @@ export class BillingWebhookService {
       hmacSignatureVerified: verifiedHeader.signatureVerified,
     };
 
+    // Quando a notificação chega no formato legado/IPN sem `body.id` nem `x-request-id`,
+    // deriva a chave idempotente a partir do estado autoritativo obtido na API oficial,
+    // evitando que transições legítimas (`pending -> authorized -> cancelled`) sejam
+    // descartadas como duplicadas enquanto repetições do mesmo estado permanecem idempotentes.
+    const authoritativeStateToken =
+      authoritative.resourceType === "subscription_preapproval"
+        ? authoritative.subscriptionStatus || "unknown"
+        : authoritative.invoiceStatus || "unknown";
+    const effectiveExternalEventId = verifiedHeader.hasProviderEventId
+      ? verifiedHeader.externalEventId
+      : `ipn:${authoritative.resourceType}:${authoritative.externalResourceId}:${authoritativeStateToken}`;
+
     // 5. Localizar assinatura alvo exclusivamente na tabela billing_subscriptions
     let subRow:
       | {
@@ -385,7 +397,7 @@ export class BillingWebhookService {
         .from("billing_webhook_events")
         .select("id")
         .eq("provider", params.providerName)
-        .eq("external_event_id", verifiedHeader.externalEventId)
+        .eq("external_event_id", effectiveExternalEventId)
         .maybeSingle();
 
       if (dupErr) {
@@ -505,7 +517,7 @@ export class BillingWebhookService {
       await admin.from("billing_webhook_events").insert({
         provider: params.providerName,
         environment: "sandbox",
-        external_event_id: verifiedHeader.externalEventId,
+        external_event_id: effectiveExternalEventId,
         event_type: verifiedHeader.eventType,
         resource_type: "subscription_preapproval",
         external_resource_id: authoritative.externalResourceId,
@@ -544,7 +556,7 @@ export class BillingWebhookService {
     const { data: rpcData, error: rpcErr } = await admin.rpc("reconcile_billing_invoice_tx", {
       p_subscription_id: subRow.id,
       p_provider: params.providerName,
-      p_external_event_id: verifiedHeader.externalEventId,
+      p_external_event_id: effectiveExternalEventId,
       p_event_type: verifiedHeader.eventType,
       p_signature_verified: true,
       p_billing_cycle_key: cycleKey,
