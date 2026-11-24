@@ -2,151 +2,170 @@
 
 import React, { useState } from "react";
 import { SITE_CONFIG } from "@/config/site";
-import { TechSlantedBars } from "./TechDecor";
 import { ScrollReveal } from "./ScrollReveal";
 import { SectionTransition } from "./SectionTransition";
 
+const STEP_VISUALS = [
+  {
+    code: "ETAPA 01 // MAPA DE PRIORIDADES",
+    nodes: ["Objetivo comercial", "Gargalos reais", "Escopo enxuto"],
+    caption: "Identificamos o que gera impacto agora — sem inflar complexidade.",
+  },
+  {
+    code: "ETAPA 02 // ARQUITETURA & MARCOS",
+    nodes: ["Fluxo visual", "Stack técnica", "Cronograma claro"],
+    caption: "Você aprova escopo, prazos e entregas antes de escrevermos código.",
+  },
+  {
+    code: "ETAPA 03 // SPRINT & HOMOLOGAÇÃO",
+    nodes: ["Código limpo", "Preview online", "Testes mobile"],
+    caption: "Acompanhamento direto em ambiente de testes antes da publicação.",
+  },
+  {
+    code: "ETAPA 04 // PRODUÇÃO & EVOLUÇÃO",
+    nodes: ["Deploy seguro", "Treinamento", "Melhoria contínua"],
+    caption: "Publicação assistida e base preparada para novas fases do negócio.",
+  },
+];
+
 /**
  * SEÇÃO 05 — COMO TRABALHAMOS (#como-trabalhamos)
- * Linha do tempo interativa:
- * 01. Diagnóstico
- * 02. Proposta
- * 03. Desenvolvimento
- * 04. Implantação e evolução
+ * Fluxo visual interativo em 4 etapas (substitui 4 cards extensos de texto).
  */
 export function Process() {
   const steps = SITE_CONFIG.processSteps;
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const currentStep = steps[activeIndex] ?? steps[0];
+  const currentVisual = STEP_VISUALS[activeIndex] ?? STEP_VISUALS[0];
 
   return (
     <section
       id="como-trabalhamos"
       aria-labelledby="process-heading"
-      className="relative border-t border-[#E9E7DF]/10 bg-gradient-to-b from-[#0B0B0B] via-[#110E1A] to-[#0B0B0B] py-20 sm:py-28"
+      className="relative py-20 sm:py-28"
     >
       <SectionTransition
         number="05"
-        code="SEC // COMO TRABALHAMOS"
+        code="COMO TRABALHAMOS"
         label="MÉTODO EM 04 ETAPAS"
       />
 
       <div className="mx-auto mt-10 max-w-[1440px] px-4 sm:mt-14 sm:px-8 lg:px-12">
         <ScrollReveal>
-          {/* Cabeçalho da seção */}
-          <div className="mb-14 flex flex-col justify-between gap-6 sm:mb-16 md:flex-row md:items-end">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-3">
-                <span className="font-tech text-xs font-semibold tracking-[0.3em] text-[#A782FF] uppercase">
-                  05 {"//"} COMO TRABALHAMOS
-                </span>
-                <span className="h-[1px] w-10 bg-[#A782FF]/45" />
-                <TechSlantedBars />
-              </div>
-              <h2
-                id="process-heading"
-                className="font-display text-2xl font-bold tracking-tight text-[#E9E7DF] sm:text-4xl"
-              >
-                Como transformamos necessidade em{" "}
-                <span className="text-[#A782FF]">solução real.</span>
-              </h2>
-            </div>
-
-            <p className="max-w-md text-sm leading-relaxed text-[#BAB5C5] sm:text-base">
-              Linha do tempo direta, previsível e sem jargões desnecessários —
-              pensada para quem precisa conduzir o negócio com segurança
-              enquanto a tecnologia é construída.
+          <div className="mb-10 flex flex-col justify-between gap-4 lg:mb-12 lg:flex-row lg:items-end">
+            <h2
+              id="process-heading"
+              className="max-w-2xl font-display text-2xl leading-[1.14] font-bold tracking-tight text-[#E9E7DF] sm:text-4xl lg:text-[2.6rem]"
+            >
+              Do diagnóstico à produção{" "}
+              <span className="text-[#A782FF]">com previsibilidade.</span>
+            </h2>
+            <p className="max-w-sm text-sm text-[#BAB5C5] lg:text-right">
+              Quatro etapas transparentes — selecione qualquer marco para ver a
+              entrega da fase.
             </p>
           </div>
 
-          {/* Linha do tempo interativa com indicador progressivo */}
-          <div className="relative">
-            {/* Trilha conectora horizontal no Desktop */}
+          {/* Barra de progresso contínua */}
+          <div className="mb-8">
             <div
               aria-hidden="true"
-              className=" absolute top-11 right-[8%] left-[8%] hidden h-[2px] bg-[#E9E7DF]/12 lg:block"
+              className="mb-4 h-[2px] w-full overflow-hidden rounded-full bg-[#E9E7DF]/10"
             >
               <div
                 style={{
-                  width: `${((activeStepIndex + 1) / steps.length) * 100}%`,
+                  transform: `scaleX(${(activeIndex + 1) / steps.length})`,
                 }}
-                className="h-full bg-gradient-to-r from-[#A782FF] to-[#B695FF] transition-all duration-500 ease-out"
+                className="h-full origin-left bg-gradient-to-r from-[#A782FF] to-[#B695FF] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
               />
             </div>
 
-            <ol className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 lg:gap-5">
-              {steps.map((step, index) => {
-                const isActive = index === activeStepIndex;
-                const isCompleted = index <= activeStepIndex;
-
+            <ol className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {steps.map((step, idx) => {
+                const isActive = idx === activeIndex;
+                const isDone = idx <= activeIndex;
                 return (
-                  <li
-                    key={step.number}
-                    onMouseEnter={() => setActiveStepIndex(index)}
-                    onClick={() => setActiveStepIndex(index)}
-                    className={`group relative flex cursor-pointer flex-col justify-between rounded-[18px] border p-6 backdrop-blur-md transition-all duration-300 sm:p-7 ${
-                      isActive
-                        ? "border-[#A782FF]/75 bg-gradient-to-b from-[#1D162E]/95 to-[#120F1C]/95 shadow-[0_14px_38px_-12px_rgba(167,130,255,0.28)] lg:-translate-y-1.5"
-                        : "border-[#E9E7DF]/15 bg-[#14111D]/85 hover:border-[#A782FF]/50"
-                    }`}
-                  >
-                    <div>
-                      {/* Topo com nó orbital e índice */}
-                      <div className="mb-6 flex items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setActiveStepIndex(index)}
-                          aria-label={`Etapa ${step.number}: ${step.title}`}
-                          className={`relative z-10 flex h-11 w-11 items-center justify-center rounded-full border font-tech text-sm font-bold transition-colors ${
-                            isCompleted
-                              ? "border-[#B695FF] bg-[#A782FF] text-[#0B0B0B] shadow-[0_0_16px_rgba(167,130,255,0.38)]"
-                              : "border-[#A782FF]/55 bg-[#161124] text-[#E9E7DF]"
-                          }`}
-                        >
-                          {step.number}
-                        </button>
-
-                        <div className="flex items-center gap-2">
-                          <span className="font-tech text-[0.62rem] tracking-[0.22em] text-[#B695FF]/85 uppercase">
-                            {step.code}
-                          </span>
-                          {index < steps.length - 1 && (
-                            <span
-                              aria-hidden="true"
-                              className="font-mono text-xs text-[#A782FF]/70 lg:hidden"
-                            >
-                              →
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Título e subtítulo */}
-                      <h3 className="font-display text-xl font-bold text-[#E9E7DF]">
-                        {step.number}. {step.title}
-                      </h3>
-                      <p className="mt-1 text-xs font-semibold tracking-[0.12em] text-[#B695FF] uppercase">
-                        {step.subtitle}
-                      </p>
-
-                      {/* Descrição compreensível e direta */}
-                      <p className="mt-4 text-sm leading-relaxed text-[#BAB5C5]">
-                        {step.description}
-                      </p>
-                    </div>
-
-                    {/* Entrega da etapa */}
-                    <div className="mt-6 border-t border-[#E9E7DF]/10 pt-4">
-                      <span className="block font-tech text-[0.58rem] tracking-[0.22em] text-[#BAB5C5]/70 uppercase">
-                        ENTREGA DA ETAPA
+                  <li key={step.number}>
+                    <button
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => setActiveIndex(idx)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all duration-200 ${
+                        isActive
+                          ? "border-[#B695FF]/70 bg-[#1B152D] text-[#E9E7DF]"
+                          : "border-[#E9E7DF]/12 bg-[#120F1B]/75 text-[#BAB5C5] hover:border-[#A782FF]/45 hover:text-[#E9E7DF]"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-tech text-[11px] font-bold transition-colors ${
+                          isDone
+                            ? "border-[#B695FF] bg-[#A782FF] text-[#0B0B0B]"
+                            : "border-[#A782FF]/45 bg-[#161124] text-[#E9E7DF]"
+                        }`}
+                      >
+                        {step.number}
                       </span>
-                      <p className="mt-1 text-xs font-medium text-[#E9E7DF]/90">
-                        {step.deliverable}
-                      </p>
-                    </div>
+                      <span className="min-w-0">
+                        <span className="block truncate font-display text-sm font-bold">
+                          {step.title}
+                        </span>
+                        <span className="hidden truncate text-[11px] text-[#BAB5C5] sm:block">
+                          {step.subtitle}
+                        </span>
+                      </span>
+                    </button>
                   </li>
                 );
               })}
             </ol>
+          </div>
+
+          {/* Palco Visual Dinâmico da Etapa Selecionada */}
+          <div
+            key={currentStep.number}
+            aria-live="polite"
+            className="animate-stage-enter de-stage-surface grid grid-cols-1 items-center gap-6 p-6 sm:p-8 lg:grid-cols-12"
+          >
+            <div className="lg:col-span-5">
+              <span className="font-tech text-[10px] tracking-[0.24em] text-[#B695FF] uppercase">
+                {currentVisual.code}
+              </span>
+              <h3 className="mt-2 font-display text-2xl font-bold text-[#E9E7DF]">
+                {currentStep.number}. {currentStep.title}
+              </h3>
+              <p className="mt-3 text-sm leading-relaxed text-[#BAB5C5]">
+                {currentStep.description}
+              </p>
+
+              <div className="mt-5 inline-flex items-center gap-2 rounded-lg border border-[#A782FF]/35 bg-[#161124] px-3.5 py-2 text-xs text-[#E9E7DF]">
+                <span className="font-tech text-[9px] tracking-[0.18em] text-[#B695FF] uppercase">
+                  ENTREGA:
+                </span>
+                <span>{currentStep.deliverable}</span>
+              </div>
+            </div>
+
+            {/* Diagrama Técnico Minimalista da Etapa */}
+            <div className="rounded-2xl border border-[#E9E7DF]/12 bg-[#0B0B0B]/85 p-5 lg:col-span-7">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {currentVisual.nodes.map((node, i) => (
+                  <div
+                    key={node}
+                    className="rounded-xl border border-[#A782FF]/25 bg-[#14111F] p-4"
+                  >
+                    <span className="font-tech text-[9px] tracking-[0.2em] text-[#B695FF]">
+                      0{i + 1}
+                    </span>
+                    <p className="mt-2 font-display text-sm font-bold text-[#E9E7DF]">
+                      {node}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 border-t border-[#E9E7DF]/10 pt-3 text-xs text-[#BAB5C5]">
+                {currentVisual.caption}
+              </p>
+            </div>
           </div>
         </ScrollReveal>
       </div>

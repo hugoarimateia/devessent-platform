@@ -1,6 +1,7 @@
 import React from "react";
 import { Navbar } from "@/components/Navbar";
 import { ImmersiveHero } from "@/components/ImmersiveHero";
+import { HeroOrbitalTransition } from "@/components/HeroOrbitalTransition";
 import { EssenceSection } from "@/components/EssenceSection";
 import { ServicesSection } from "@/components/ServicesSection";
 import { Solutions } from "@/components/Solutions";
@@ -16,6 +17,7 @@ export default function HomePage() {
       <Navbar />
       <main id="main-content" className="flex-1">
         <ImmersiveHero />
+        <HeroOrbitalTransition />
         <EssenceSection />
         <ServicesSection />
         <Solutions />

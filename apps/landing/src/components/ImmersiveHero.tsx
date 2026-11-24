@@ -6,29 +6,22 @@ import { ExploreArrow } from "./ExploreArrow";
 import { TechSlantedBars } from "./TechDecor";
 
 /**
- * Primeira Dobra Cinematográfica (100svh) dedicada exclusivamente à identidade DevEssent.
- * Elementos presentes:
- * - Logotipo DevEssent (fiel à referência 03_logo_wordmark.png)
- * - Assinatura SOFTWARE HOUSE
- * - Headline institucional
- * - Texto conceitual curto
- * - Astronauta com flutuação e hover
- * - Elementos HUD
- * - Letreiro lateral animado (vertical no desktop / faixa compacta no mobile)
- * - Botão Fale Conosco (/contato em nova guia)
- * - Seta animada de exploração (ExploreArrow)
+ * Primeira Dobra Cinematográfica (min-h-[100svh] sem clipping vertical)
+ * - Preserva 100% a identidade DevEssent e o astronauta protagonista
+ * - Usa overflow-x-clip (nunca overflow-hidden vertical) para impedir cortes no indicador EXPLORAR
+ * - Aplica parallax discreto nas camadas de fundo e astronauta via CSS Scroll-Driven Animations
  */
 export function ImmersiveHero() {
   return (
     <section
       id="inicio"
       aria-labelledby="hero-heading"
-      className="relative flex min-h-[100svh] w-full flex-col justify-between overflow-hidden pt-16 pb-3 sm:pt-20 sm:pb-5 lg:h-[100svh]"
+      className="relative flex min-h-[100svh] w-full flex-col justify-between overflow-x-clip pt-16 pb-3 sm:pt-[72px] sm:pb-4 lg:min-h-[100dvh] lg:pt-[74px] lg:pb-3"
     >
-      {/* Pontos estelares sutis e atmosfera espacial */}
+      {/* Pontos estelares sutis com parallax compositor-only */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-45"
+        className="de-hero-parallax-stars pointer-events-none absolute inset-0 opacity-45"
         style={{
           backgroundImage:
             "radial-gradient(1.5px 1.5px at 14% 22%, rgba(233,231,223,0.7), transparent), radial-gradient(1px 1px at 36% 14%, rgba(167,130,255,0.8), transparent), radial-gradient(1.5px 1.5px at 62% 8%, rgba(233,231,223,0.5), transparent), radial-gradient(1px 1px at 84% 28%, rgba(182,149,255,0.6), transparent), radial-gradient(1.5px 1.5px at 22% 76%, rgba(167,130,255,0.5), transparent)",
@@ -36,17 +29,17 @@ export function ImmersiveHero() {
       />
 
       {/* Área Central da Primeira Dobra */}
-      <div className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1 items-center px-4 sm:px-8 lg:px-10">
-        <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:gap-8">
-          {/* Letreiro Lateral Animado (Desktop à esquerda / Mobile no topo compacto) */}
+      <div className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1 items-center px-4 py-2 sm:px-8 sm:py-3 lg:px-10 lg:py-2">
+        <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:gap-7">
+          {/* Letreiro Lateral Animado */}
           <VerticalTicker />
 
           {/* Grid Editorial Principal: Identidade + Astronauta */}
-          <div className="grid flex-1 grid-cols-1 items-center gap-4 sm:gap-6 lg:grid-cols-12 lg:gap-6">
+          <div className="grid flex-1 grid-cols-1 items-center gap-5 sm:gap-6 lg:grid-cols-12 lg:gap-6">
             {/* Coluna Esquerda: Assinatura, Logotipo Principal, Headline, Texto Curto e CTA */}
             <div className="z-10 flex min-w-0 flex-col items-start text-left lg:col-span-6">
               {/* Assinatura SOFTWARE HOUSE ────── ////// */}
-              <div className="mb-3 inline-flex max-w-full flex-wrap items-center gap-2.5 sm:mb-4 sm:gap-3.5">
+              <div className="mb-2.5 inline-flex max-w-full flex-wrap items-center gap-2.5 sm:mb-3.5 sm:gap-3.5">
                 <span className="font-tech text-[0.64rem] font-medium tracking-[0.28em] text-[#E9E7DF]/90 uppercase sm:text-xs sm:tracking-[0.34em]">
                   SOFTWARE HOUSE
                 </span>
@@ -57,8 +50,8 @@ export function ImmersiveHero() {
                 <TechSlantedBars variant="filled-first" />
               </div>
 
-              {/* Logotipo Principal do Hero — Vetor 1:1 fiel a 03_logo_wordmark.png */}
-              <div className="mb-3.5 max-w-full sm:mb-5">
+              {/* Logotipo Principal do Hero */}
+              <div className="mb-3 max-w-full sm:mb-4">
                 <DevEssentLogo variant="hero" />
               </div>
 
@@ -66,30 +59,31 @@ export function ImmersiveHero() {
               <h1
                 id="hero-heading"
                 tabIndex={-1}
-                className="max-w-full font-display text-[clamp(1.12rem,3.4vw,1.95rem)] leading-[1.32] font-light tracking-[0.07em] break-words text-[#E9E7DF] uppercase sm:max-w-xl sm:tracking-[0.12em]"
+                className="max-w-full font-display text-[clamp(1.12rem,2.6vw,1.9rem)] leading-[1.3] font-light tracking-[0.07em] break-words text-[#E9E7DF] uppercase sm:max-w-xl sm:tracking-[0.11em]"
               >
                 TECNOLOGIA ESSENCIAL{" "}
                 <span className="mt-0.5 block">
                   PARA NEGÓCIOS QUE{" "}
-                  <strong className="font-extrabold tracking-[0.08em] text-[#A782FF] drop-shadow-[0_0_18px_rgba(167,130,255,0.35)] sm:tracking-[0.14em]">
+                  <strong className="font-extrabold tracking-[0.08em] text-[#A782FF] drop-shadow-[0_0_16px_rgba(167,130,255,0.3)] sm:tracking-[0.13em]">
                     EVOLUEM.
                   </strong>
                 </span>
               </h1>
 
               {/* Texto Conceitual Curto */}
-              <p className="mt-3 max-w-[33rem] text-sm leading-[1.62] font-normal text-[#BAB5C5] sm:mt-4 sm:text-[1.02rem]">
-                Desenvolvemos sites, sistemas e soluções digitais sob medida,
-                com foco em performance, segurança e resultado.
+              <p className="mt-2.5 max-w-[32rem] text-sm leading-[1.6] font-normal text-[#BAB5C5] sm:mt-3.5 sm:text-[1rem]">
+                Sites, sistemas web, vitrines comerciais e automações sob
+                medida — projetados para operar com velocidade, clareza e
+                resultado.
               </p>
 
-              {/* Botão Fale Conosco + Atalho discreto de exploração */}
-              <div className="mt-5 flex w-full flex-wrap items-center gap-3.5 sm:mt-7 sm:w-auto">
+              {/* CTA Principal + Atalho para Demonstrações */}
+              <div className="mt-5 flex w-full flex-wrap items-center gap-3 sm:mt-6 sm:w-auto">
                 <a
                   href="/contato"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group inline-flex min-h-[46px] w-full items-center justify-center gap-3 rounded-[10px] bg-gradient-to-r from-[#B695FF] to-[#A782FF] px-6 py-3 text-sm font-semibold text-[#0B0B0B] shadow-[0_0_28px_rgba(167,130,255,0.36)] transition-all duration-200 hover:brightness-105 hover:shadow-[0_0_36px_rgba(167,130,255,0.58)] sm:min-h-[48px] sm:w-auto sm:text-[0.94rem]"
+                  className="group inline-flex min-h-[46px] w-full items-center justify-center gap-3 rounded-[10px] bg-gradient-to-r from-[#B695FF] to-[#A782FF] px-6 py-3 text-sm font-semibold text-[#0B0B0B] shadow-[0_0_24px_rgba(167,130,255,0.32)] transition-all duration-200 hover:brightness-105 hover:shadow-[0_0_32px_rgba(167,130,255,0.5)] sm:min-h-[48px] sm:w-auto sm:text-[0.94rem]"
                 >
                   <span
                     aria-hidden="true"
@@ -111,6 +105,14 @@ export function ImmersiveHero() {
                     <path d="M7 17L17 7M7 7h10v10" />
                   </svg>
                 </a>
+
+                <a
+                  href="#servicos"
+                  className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[10px] border border-[#E9E7DF]/18 bg-[#161124]/60 px-5 py-3 text-xs font-medium tracking-[0.04em] text-[#E9E7DF] transition-colors duration-200 hover:border-[#A782FF]/65 hover:text-[#B695FF] sm:min-h-[48px] sm:w-auto sm:text-sm"
+                >
+                  <span>Ver demonstrações</span>
+                  <span aria-hidden="true">↓</span>
+                </a>
               </div>
             </div>
 
@@ -122,51 +124,10 @@ export function ImmersiveHero() {
         </div>
       </div>
 
-      {/* Rodapé da Primeira Dobra: Horizonte Wireframe sutil + Seta Animada de Exploração */}
-      <div className="relative z-20 mx-auto flex w-full max-w-[1440px] flex-col items-center justify-center px-4 pt-1">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute right-0 bottom-2 left-0 -z-10 mx-auto h-14 max-w-[1440px] overflow-hidden opacity-45 sm:h-20"
-        >
-          <svg
-            viewBox="0 0 1440 120"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="none"
-            className="h-full w-full"
-          >
-            <defs>
-              <linearGradient
-                id="hero-wireframe-grad"
-                x1="0%"
-                y1="0%"
-                x2="100%"
-                y2="0%"
-              >
-                <stop offset="0%" stopColor="#A782FF" stopOpacity="0" />
-                <stop offset="28%" stopColor="#A782FF" stopOpacity="0.4" />
-                <stop offset="55%" stopColor="#B695FF" stopOpacity="0.65" />
-                <stop offset="85%" stopColor="#A782FF" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#A782FF" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path
-              d="M180 118 L320 68 L410 98 L510 42 L620 88 L730 34 L850 92 L960 58 L1120 118"
-              stroke="url(#hero-wireframe-grad)"
-              strokeWidth="1.1"
-            />
-            <path
-              d="M1060 120 Q1260 45 1440 25"
-              stroke="#B695FF"
-              strokeOpacity="0.45"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </div>
-
+      {/* Rodapé da Primeira Dobra: Indicador EXPLORAR com folga total e sem linha poligonal cortada */}
+      <div className="relative z-20 mx-auto flex w-full max-w-[1440px] flex-col items-center justify-center px-4 pt-1 pb-1">
         <ExploreArrow targetId="nossa-essencia" label="EXPLORAR" />
       </div>
     </section>
   );
 }
-

@@ -35,9 +35,9 @@ export function VerticalTicker() {
           />
         </div>
 
-        {/* Janela vertical animada */}
+        {/* Janela vertical animada (altura responsiva à altura do viewport para folga em notebooks 720p) */}
         <div
-          className="relative my-3 h-[340px] w-6 overflow-hidden xl:h-[390px]"
+          className="relative my-2.5 h-[210px] w-6 overflow-hidden [@media(min-height:820px)]:my-3 [@media(min-height:820px)]:h-[320px]"
           style={{
             maskImage:
               "linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%)",
