@@ -134,7 +134,7 @@ O adaptador `MercadoPagoBillingProvider` implementa os endpoints oficiais do Mer
 - `GET /preapproval/{id}` (consulta autoritativa de contrato)
 - `GET /authorized_payments/{id}` (consulta autoritativa de cobrança recorrente)
 
-**Transparência operacional:** quando `BILLING_MP_ACCESS_TOKEN` (prefixo `TEST-...`) e `BILLING_MP_WEBHOOK_SECRET` da conta DevEssent não estão configurados no servidor, o adaptador sinaliza explicitamente na UI e nos logs o modo **`internal_sandbox_simulator`**. Credenciais de produção (`APP_USR-*`) são bloqueadas *fail-closed*.
+**Transparência operacional (Fase 6E.2C):** o modo do provedor é selecionado explicitamente por `BILLING_PROVIDER_MODE` (`internal_sandbox_simulator` por padrão seguro até ativação explícita de `official_sandbox_api`). Credenciais de teste oficiais do Mercado Pago (`APP_USR-*` de Conta de Teste ou `TEST-*`) são aceitas **exclusivamente** após comprovação autoritativa via `GET /users/me` (`tags: ["test_user"]`, `site_id: "MLB"` e `collector_id` correspondente); contas reais sem `test_user` são bloqueadas *fail-closed*.
 
 ---
 
@@ -221,14 +221,17 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 ## 18. Segurança e Performance no Cloudflare Workers
 
-- **Segredos exclusivos e obrigatórios no servidor (fail-closed — Fase 6E.2B):**
+- **Seleção explícita de modo e segredos exclusivos no servidor (fail-closed — Fases 6E.2B e 6E.2C):**
+  - A seleção entre `internal_sandbox_simulator` e `official_sandbox_api` é controlada **explicitamente** por `BILLING_PROVIDER_MODE` (nunca alterna automaticamente apenas pela presença de tokens).
   - No modo `internal_sandbox_simulator`: exige exclusivamente `BILLING_WEBHOOK_SANDBOX_SECRET` (≥ 32 caracteres de alta entropia), rejeitando *fail-closed* qualquer ausência, padrão previsível ou reutilização de `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_BRIDGE_SECRET` ou `PAYMENT_CREDENTIALS_ENCRYPTION_KEY`.
-  - No modo `official_sandbox_api`: exige `BILLING_MP_ACCESS_TOKEN` (`TEST-...`) + `BILLING_MP_WEBHOOK_SECRET` (≥ 16 caracteres), bloqueando *fail-closed* tokens de produção (`APP_USR-*`) e desabilitando automaticamente o simulador interno de cobranças.
-  - Endpoints de simulação de cobrança são restritos exclusivamente a `platform_admin` em ambiente não-produtivo (`staging`/`development`) e nunca aceitam provedores arbitrários na rota pública `/api/webhooks/billing/[provider]` (restrita exclusivamente a `mercado_pago`).
-  - Todo evento persistido em `billing_webhook_events.payload_summary` e `audit_logs.metadata` grava explicitamente `providerOrigin` (`internal_sandbox_simulator` vs `mercado_pago_official_sandbox`).
-- **Zero impacto nas demais páginas da plataforma:** `resolveWorkspaceSession()` permanece intocado — nenhuma consulta Billing é executada em `/dashboard`, `/dashboard/retail/**`, `/loja/**` ou `/admin`.
+  - No modo `official_sandbox_api`: exige `BILLING_MP_ENVIRONMENT=sandbox`, `BILLING_MP_ACCESS_TOKEN` (suporta formatos oficiais `APP_USR-*` de Conta de Teste e `TEST-*`), `BILLING_MP_COLLECTOR_ID` numérico e `BILLING_MP_WEBHOOK_SECRET` (em `hmac_strict`), comprovando autoritativamente via **`GET /users/me`** que o token pertence a uma Conta de Teste (`tags: ["test_user"]`, `site_id: "MLB"` e `collector_id` correspondente) antes de qualquer operação financeira.
+  - Endpoints de simulação de cobrança são restritos exclusivamente a `platform_admin` em ambiente não-produtivo (`staging`/`development`) e desabilitados automaticamente quando `official_sandbox_api` estiver ativa. A rota pública `/api/webhooks/billing/[provider]` aceita exclusivamente `mercado_pago`, suportando `ts` em segundos (10 dígitos) e milissegundos (13 dígitos) no cabeçalho `x-signature`.
+  - Todo evento persistido em `billing_webhook_events.payload_summary` e `audit_logs.metadata` grava explicitamente `providerOrigin` (`internal_sandbox_simulator` vs `mercado_pago_official_sandbox`), `authMethod` e `hmacSignatureVerified`.
+- **Zero impacto nas demais páginas da plataforma:** `resolveWorkspaceSession()` permanece intocado — nenhuma consulta Billing nem chamada externa à API do Mercado Pago é executada durante a navegação das páginas.
 - **Pré-busca paralela RLS-enforced:** `/dashboard/assinatura` utiliza `getActiveTenantHintUuid()` em paralelo com `resolveWorkspaceSession()`, preservando as otimizações das Fases 6D.2 e 6E.1.
-- **Impacto de bundle Workers (`vinext`):** `2,60 MiB` descomprimido (`4,1%` do limite de `64 MiB`), **`663,42 KiB` gzip no upload Cloudflare** (`0,65 MiB` vs limite de `3 MiB` do plano Free) e **startup time de `16 ms`**.
+- **Impacto de bundle Workers (`vinext`):** `2,63 MiB` descomprimido (`4,1%` do limite de `64 MiB`), **`668,03 KiB` gzip no upload Cloudflare** (`0,65 MiB` vs limite de `3 MiB` do plano Free).
+
+> Para o detalhamento completo da integração oficial Mercado Pago Sandbox, verificação `/users/me`, versionamento não-ativo (`wrangler versions upload` / `wrangler versions secret put`) e guia passo a passo de criação das Contas de Teste, consulte [DEVESSENT_PHASE_6E2C_MERCADO_PAGO_SANDBOX.md](./DEVESSENT_PHASE_6E2C_MERCADO_PAGO_SANDBOX.md).
 
 ---
 
@@ -247,7 +250,7 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 | Camada de Teste | Status | Escopo Verificado |
 |---|---|---|
-| **1. Testes Unitários (`tests/unit/` incluindo `billing-domain-and-security.test.ts`)** | **PASS (22/22 arquivos · 120/120 testes)** | Divisão 50/50 em inteiros (inclusive valores ímpares), MRR, bloqueio fail-closed `APP_USR-`/live, segredo exclusivo obrigatório sem fallback previsível ou reuso, prontidão de início agendado, matriz RBAC, magic bytes PDF/PNG e HMAC-SHA256 |
+| **1. Testes Unitários (`tests/unit/` incluindo `billing-domain-and-security.test.ts` e `mercado-pago-official-sandbox.test.ts`)** | **PASS (23/23 arquivos · 123/123 testes)** | Divisão 50/50 em inteiros, MRR, validação `/users/me` (`test_user`/`MLB`/`collector_id`) para `APP_USR-*` e `TEST-*`, seleção explícita `BILLING_PROVIDER_MODE`, segredo exclusivo sem fallback previsível ou reuso, endpoints `/preapproval` & `/authorized_payments`, `ts` em 10 e 13 dígitos, RBAC, magic bytes e indisponibilidade `503` |
 | **2. Testes de Integração Real PostgreSQL/RLS (`billing-supabase-security.test.ts` + `retail-payments-supabase-staging.test.ts`)** | **PASS (2/2 suítes · 6/6 testes contra `auebnppzxcvtaaqqlbts`)** | Isolamento RLS entre `Ateliê` e `Verde`, bloqueio de `manager`/`staff` (0 linhas), bloqueio de UPDATE/RPC por `owner`, idempotência (`duplicate`), `past_due` com `tenants.status = active`, confirmação única 50/50 e ausência total de regressão no Retail Payments |
 | **3. Homologação Online HTTPS em Cloudflare Workers Staging (`https://devessent-platform-staging.devessent.workers.dev`)** | **PASS (`0 pageErrors` · `0 HTTP 5xx` · `193/193 ok` no `wrangler tail`)** | Planos, assinaturas, marco de ativação, autorização pelo Owner, webhooks HMAC (`400` provider inválido, `401` assinatura forjada, `401` `live_mode=true`, `200 processed` `subscription_preapproval`, `200 processed` `paid`, `200 duplicate` replay, `200 ignored_out_of_order`, `past_due` com vitrine `/loja/atelie-demonstrativo` retornando `200 OK`, troca de cartão + regularização `active`, `providerOrigin` explícito), contrato 50/50 com upload privado (`receipt_attached` → `confirmed` → entrega → `completed`, leitura pública bloqueada `400`), cancelamento agendado, 13 registros de auditoria (11 ações distintas), bloqueio RBAC (`owner_verde`, `manager`, `staff`), Retail 100% intocado e limpeza integral ao final |
 | **4. API Oficial Mercado Pago Sandbox (externa)** | **PENDENTE (credenciais `BILLING_MP_ACCESS_TOKEN` / `BILLING_MP_WEBHOOK_SECRET` da conta DevEssent ainda não provisionadas)** | Adaptador `official_sandbox_api` pronto (incluindo link de autorização externa no painel Owner e reconciliação de `subscription_preapproval`); homologação externa aguarda criação da aplicação Developers pelo proprietário da conta DevEssent |
@@ -267,7 +270,7 @@ Máquina de estados clara em `billing_subscriptions.status`:
 
 ## 22. Pendências para Produção
 
-1. Criar a aplicação Mercado Pago Developers da **DevEssent** (com Contas de Teste Vendedor + Comprador), configurar `BILLING_MP_ACCESS_TOKEN` (`TEST-...`) e `BILLING_MP_WEBHOOK_SECRET` via `wrangler secret put` no Worker `devessent-platform-staging` (sem jamais enviar chaves por chat) e homologar eventos externos reais `subscription_preapproval` e `subscription_authorized_payment` na URL `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`.
+1. Criar a aplicação Mercado Pago Developers da **DevEssent** (com Contas de Teste Vendedor + Comprador), configurar `BILLING_MP_ACCESS_TOKEN` (`APP_USR-*` de Conta de Teste ou `TEST-*`), `BILLING_MP_WEBHOOK_SECRET`, `BILLING_MP_COLLECTOR_ID`, `BILLING_MP_ENVIRONMENT=sandbox` e `BILLING_PROVIDER_MODE=official_sandbox_api` via `wrangler versions secret put` no Worker `devessent-platform-staging` (sem jamais enviar chaves por chat), validar na Preview URL e homologar eventos externos reais `subscription_preapproval` e `subscription_authorized_payment` na URL `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`.
 2. Definir tabela definitiva de planos comerciais, termos jurídicos de contratação, política formal de tolerância/inadimplência e regras de cancelamento da DevEssent.
 3. Configurar canal oficial de e-mail transacional (com consentimento e SPF/DKIM) para consumir `billing_notifications_queue` em produção.
 4. Avaliar contratação do plano Cloudflare Workers Paid (`$5/mês`) para o ambiente de Produção caso o pico de CPU em páginas RSC concorrentes exija folga acima do plano Free.
@@ -314,11 +317,16 @@ Medições executadas online em `https://devessent-platform-staging.devessent.wo
    - **URL de teste:** `https://devessent-platform-staging.devessent.workers.dev/api/webhooks/billing/mercado_pago`
    - **Eventos selecionados:** marcar **Planos e assinaturas** (`subscription_preapproval` e `subscription_authorized_payment`).
    - Salvar e copiar a **Assinatura secreta** gerada pelo Mercado Pago para o ambiente de teste.
-4. **Configurar os Secrets diretamente no Worker de Staging (PowerShell local, conta DevEssent):**
+4. **Configurar os Secrets em Versão Não-Ativa no Worker de Staging (PowerShell local, conta DevEssent):**
    ```powershell
    $env:CLOUDFLARE_ACCOUNT_ID = "bf89f7f990af2c019abf8e7604db760d"
-   npx wrangler secret put BILLING_MP_ACCESS_TOKEN --name devessent-platform-staging
-   npx wrangler secret put BILLING_MP_WEBHOOK_SECRET --name devessent-platform-staging
+   npx wrangler versions secret put BILLING_MP_ACCESS_TOKEN --name devessent-platform-staging
+   npx wrangler versions secret put BILLING_MP_WEBHOOK_SECRET --name devessent-platform-staging
+   npx wrangler versions secret put BILLING_MP_COLLECTOR_ID --name devessent-platform-staging
+   npx wrangler versions secret put BILLING_MP_ENVIRONMENT --name devessent-platform-staging    # valor: sandbox
+   npx wrangler versions secret put BILLING_PROVIDER_MODE --name devessent-platform-staging     # valor: official_sandbox_api
+   # Validar via Preview URL (botão "Diagnosticar Provedor MP") e então promover:
+   npx wrangler versions deploy --name devessent-platform-staging
    ```
 5. **Validação imediata após configurar os secrets:**
    - Acesse `https://devessent-platform-staging.devessent.workers.dev/admin/comercial` e confirme que o selo do provedor mudou automaticamente para **`Mercado Pago Assinaturas (API Sandbox)`** (desabilitando automaticamente os botões do simulador interno).
