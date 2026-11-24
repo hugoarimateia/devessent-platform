@@ -246,16 +246,57 @@ export interface ImplementationContract {
   updatedAt: string;
 }
 
+export type BillingProviderMode = "official_sandbox_api" | "internal_sandbox_simulator";
+
+export type BillingWebhookAuthMode = "hmac_strict" | "authoritative_fallback";
+
 export interface BillingProviderRuntimeStatus {
   provider: BillingProviderName;
-  mode: "official_sandbox_api" | "internal_sandbox_simulator";
+  mode: BillingProviderMode;
+  modeExplicitlyConfigured: boolean;
+  configValid: boolean;
+  diagnosticCode:
+    | "SIMULATOR_READY"
+    | "OFFICIAL_SANDBOX_CONFIG_READY"
+    | "INVALID_PROVIDER_MODE"
+    | "PRODUCTION_BLOCKED_FAIL_CLOSED"
+    | "MISSING_EXCLUSIVE_SIMULATOR_SECRET"
+    | "MISSING_OFFICIAL_TOKEN"
+    | "MISSING_OFFICIAL_COLLECTOR_ID"
+    | "MISSING_OFFICIAL_WEBHOOK_SECRET"
+    | "SHARED_SECRET_FORBIDDEN";
   environment: "sandbox";
   liveChargesEnabled: false;
+  webhookAuthMode: BillingWebhookAuthMode;
+  collectorIdConfigured: boolean;
   supportsCreditCardRecurring: boolean;
   supportsScheduledStartDate: boolean;
   supportsPixAutomatic: boolean;
   webhookEndpointPath: string;
   statusNote: string;
+}
+
+export interface OfficialSandboxIdentityVerification {
+  verified: boolean;
+  provider: BillingProviderName;
+  mode: BillingProviderMode;
+  collectorId: string | null;
+  siteId: string | null;
+  isTestUser: boolean;
+  checkedAt: string;
+  cached: boolean;
+  diagnosticMessage: string;
+}
+
+export interface BillingSubscriptionSyncResult {
+  subscriptionId: string;
+  externalSubscriptionId: string | null;
+  previousStatus: BillingSubscriptionStatus;
+  newStatus: BillingSubscriptionStatus;
+  providerStatusRaw: string | null;
+  authorizedPaymentsSynced: number;
+  providerOrigin: "mercado_pago_official_sandbox" | "internal_sandbox_simulator";
+  checkedAt: string;
 }
 
 export interface GlobalBillingOverview {

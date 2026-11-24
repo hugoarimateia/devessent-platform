@@ -38,11 +38,23 @@ const FORBIDDEN_CLOUDFLARE_EMAILS = new Set([
 ]);
 const EXPECTED_STAGING_WORKER_NAME = "devessent-platform-staging";
 
-type Subcommand = "build" | "preview" | "verify-bundle" | "sync-secrets" | "deploy";
+type Subcommand =
+  | "build"
+  | "preview"
+  | "verify-bundle"
+  | "sync-secrets"
+  | "upload-preview"
+  | "deploy";
 const subcommand = (process.argv[2] || "") as Subcommand;
 
-if (!["build", "preview", "verify-bundle", "sync-secrets", "deploy"].includes(subcommand)) {
-  console.error("Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|sync-secrets|deploy]");
+if (
+  !["build", "preview", "verify-bundle", "sync-secrets", "upload-preview", "deploy"].includes(
+    subcommand
+  )
+) {
+  console.error(
+    "Uso: tsx scripts/cf-staging.ts [build|preview|verify-bundle|sync-secrets|upload-preview|deploy]"
+  );
   process.exit(1);
 }
 
@@ -136,7 +148,7 @@ function verifyBuiltBundle(): void {
     { name: "old-staging-ref", regex: /vjoodpqjzxpmrfvjbxrq/ },
     { name: "ejc-project-ref", regex: /guppedddwnuvluhiaaas/ },
     { name: "brokeos-project-ref", regex: /hhjqlkickedbnlbuxwlo/ },
-    { name: "mp-prod-access-token", regex: /APP_USR-[a-zA-Z0-9_-]{12,}/ },
+    { name: "mp-access-token-leak", regex: /(?:APP_USR|TEST)-[0-9]{6,}-[0-9]{4,}-[a-zA-Z0-9_-]{12,}/ },
   ];
 
   for (const file of codeFiles) {
@@ -287,6 +299,21 @@ async function runPreview(): Promise<void> {
     `PAYMENT_CREDENTIALS_ENCRYPTION_KEY=${paymentEncKey}`,
     `AUTH_BRIDGE_SECRET=${authBridgeSecret}`,
     `BILLING_WEBHOOK_SANDBOX_SECRET=${billingSandboxSecret}`,
+    ...(validated.rawVars.BILLING_PROVIDER_MODE?.trim()
+      ? [`BILLING_PROVIDER_MODE=${validated.rawVars.BILLING_PROVIDER_MODE.trim()}`]
+      : []),
+    ...(validated.rawVars.BILLING_MP_ENVIRONMENT?.trim()
+      ? [`BILLING_MP_ENVIRONMENT=${validated.rawVars.BILLING_MP_ENVIRONMENT.trim()}`]
+      : []),
+    ...(validated.rawVars.BILLING_MP_COLLECTOR_ID?.trim()
+      ? [`BILLING_MP_COLLECTOR_ID=${validated.rawVars.BILLING_MP_COLLECTOR_ID.trim()}`]
+      : []),
+    ...(validated.rawVars.BILLING_MP_APPLICATION_ID?.trim()
+      ? [`BILLING_MP_APPLICATION_ID=${validated.rawVars.BILLING_MP_APPLICATION_ID.trim()}`]
+      : []),
+    ...(validated.rawVars.BILLING_MP_WEBHOOK_AUTH_MODE?.trim()
+      ? [`BILLING_MP_WEBHOOK_AUTH_MODE=${validated.rawVars.BILLING_MP_WEBHOOK_AUTH_MODE.trim()}`]
+      : []),
     ...(validated.rawVars.BILLING_MP_ACCESS_TOKEN?.trim()
       ? [`BILLING_MP_ACCESS_TOKEN=${validated.rawVars.BILLING_MP_ACCESS_TOKEN.trim()}`]
       : []),
@@ -467,10 +494,20 @@ async function runSyncSecrets(): Promise<void> {
 
   const mpAccessToken = validated.rawVars.BILLING_MP_ACCESS_TOKEN?.trim() || "";
   const mpWebhookSecret = validated.rawVars.BILLING_MP_WEBHOOK_SECRET?.trim() || "";
+  const mpEnv = (validated.rawVars.BILLING_MP_ENVIRONMENT?.trim() || "sandbox").toLowerCase();
+  const mpCollectorId = validated.rawVars.BILLING_MP_COLLECTOR_ID?.trim() || "";
+  const mpAppId = validated.rawVars.BILLING_MP_APPLICATION_ID?.trim() || "";
+  const mpMode = validated.rawVars.BILLING_PROVIDER_MODE?.trim() || "";
+
+  if (mpEnv !== "sandbox") {
+    throw new Error(
+      `BLOQUEIO FAIL-CLOSED: BILLING_MP_ENVIRONMENT deve ser 'sandbox' em Staging (recebido: '${mpEnv}').`
+    );
+  }
   if (mpAccessToken) {
-    if (mpAccessToken.startsWith("APP_USR-")) {
+    if (!mpCollectorId || !/^\d+$/.test(mpCollectorId)) {
       throw new Error(
-        "BLOQUEIO FAIL-CLOSED: BILLING_MP_ACCESS_TOKEN de produção (APP_USR-) proibida em Staging."
+        "BLOQUEIO DE SEGURANÇA BILLING: BILLING_MP_COLLECTOR_ID numérico da Conta de Teste é obrigatório junto com BILLING_MP_ACCESS_TOKEN."
       );
     }
     if (!mpWebhookSecret || mpWebhookSecret.length < 16) {
@@ -480,6 +517,9 @@ async function runSyncSecrets(): Promise<void> {
     }
     secretPayload.BILLING_MP_ACCESS_TOKEN = mpAccessToken;
     secretPayload.BILLING_MP_WEBHOOK_SECRET = mpWebhookSecret;
+    secretPayload.BILLING_MP_COLLECTOR_ID = mpCollectorId;
+    if (mpAppId) secretPayload.BILLING_MP_APPLICATION_ID = mpAppId;
+    if (mpMode) secretPayload.BILLING_PROVIDER_MODE = mpMode;
   }
 
   const syncedKeyNames = Object.keys(secretPayload).join(", ");
@@ -594,6 +634,66 @@ async function runDeploy(): Promise<void> {
   }
 }
 
+async function runUploadPreviewVersion(): Promise<void> {
+  verifyBuiltBundle();
+
+  const generatedConfig = JSON.parse(
+    fs.readFileSync(generatedWranglerPath, "utf-8")
+  ) as { name?: string; account_id?: string };
+  if (generatedConfig.name !== EXPECTED_STAGING_WORKER_NAME) {
+    throw new Error(
+      `BLOQUEIO DE SEGURANÇA: Worker alvo inválido ("${generatedConfig.name}"). Esperado exclusivamente "${EXPECTED_STAGING_WORKER_NAME}".`
+    );
+  }
+  if (
+    generatedConfig.account_id &&
+    generatedConfig.account_id.toLowerCase() !== AUTHORIZED_CLOUDFLARE_ACCOUNT_ID
+  ) {
+    throw new Error(
+      `BLOQUEIO DE SEGURANÇA: account_id no artefato ("${generatedConfig.account_id}") difere da conta DevEssent autorizada ("${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID}").`
+    );
+  }
+
+  const pub = resolveStagingBuildPublicEnv();
+  const wranglerBin = getWranglerBin();
+  await assertAuthorizedCloudflareAccount(wranglerBin);
+
+  console.log("🧪 DevEssent Platform — Upload de Versão Não-Ativa (Cloudflare Preview Version)");
+  console.log(`   Conta CF    : ${AUTHORIZED_CLOUDFLARE_ACCOUNT_ID} (DevEssent verificada)`);
+  console.log(`   Worker alvo : ${EXPECTED_STAGING_WORKER_NAME} (sem alterar tráfego ativo)`);
+  console.log(`   Supabase    : ${pub.supabaseHost} (${AUTHORIZED_STAGING_PROJECT_REF})`);
+  console.log("   Segredos    : preservados no Worker; nenhuma credencial enviada no artefato");
+
+  const uploadArgs = [
+    wranglerBin,
+    "versions",
+    "upload",
+    "--config",
+    generatedWranglerPath,
+    "--var",
+    `NEXT_PUBLIC_APP_URL:${pub.appUrl}`,
+    "--var",
+    `NEXT_PUBLIC_SUPABASE_ANON_KEY:${pub.anonKey}`,
+  ];
+
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    const child = spawn(process.execPath, uploadArgs, {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        CLOUDFLARE_ACCOUNT_ID: AUTHORIZED_CLOUDFLARE_ACCOUNT_ID,
+        WRANGLER_SEND_METRICS: "false",
+      },
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
+}
+
 (async () => {
   try {
     if (subcommand === "build") {
@@ -604,6 +704,8 @@ async function runDeploy(): Promise<void> {
       await runPreview();
     } else if (subcommand === "sync-secrets") {
       await runSyncSecrets();
+    } else if (subcommand === "upload-preview") {
+      await runUploadPreviewVersion();
     } else if (subcommand === "deploy") {
       await runDeploy();
     }

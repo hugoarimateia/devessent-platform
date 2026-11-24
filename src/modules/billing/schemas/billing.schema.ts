@@ -35,6 +35,12 @@ export const createBillingSubscriptionSchema = z.object({
   scheduledStartDate: isoDateSchema,
   gracePeriodDays: z.number().int().min(0).max(60).default(7),
   contractAcceptedByName: z.string().trim().min(2).max(120).optional().nullable(),
+  sandboxPayerEmail: z
+    .string()
+    .trim()
+    .email("Informe um e-mail válido para o pagador Sandbox.")
+    .optional()
+    .nullable(),
   adminNotes: z.string().trim().max(600).optional().nullable(),
 });
 

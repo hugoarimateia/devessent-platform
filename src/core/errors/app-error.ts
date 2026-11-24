@@ -64,4 +64,10 @@ export class RateLimitError extends AppError {
   }
 }
 
+export class ServiceUnavailableError extends AppError {
+  constructor(message = "Serviço externo temporariamente indisponível. Tente novamente em instantes.") {
+    super(message, 503, "SERVICE_UNAVAILABLE");
+  }
+}
+
 

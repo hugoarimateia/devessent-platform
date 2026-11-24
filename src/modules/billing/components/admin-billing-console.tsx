@@ -25,7 +25,9 @@ import {
   createBillingPlanAction,
   createBillingSubscriptionAction,
   createImplementationContractAction,
+  runOfficialProviderDiagnosticAction,
   simulateSandboxChargeAction,
+  syncSubscriptionFromProviderAction,
   updateBillingPlanAction,
   updateImplementationContractAction,
   updateSubscriptionContractAction,
@@ -98,6 +100,7 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
   );
   const [subGraceDays, setSubGraceDays] = React.useState("7");
   const [subAcceptedBy, setSubAcceptedBy] = React.useState("");
+  const [subSandboxPayerEmail, setSubSandboxPayerEmail] = React.useState("");
   const [subNotes, setSubNotes] = React.useState("");
 
   // Formulário Novo Contrato 50/50
@@ -171,10 +174,12 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
           scheduledStartDate: subStartDate,
           gracePeriodDays: Number(subGraceDays || 7),
           contractAcceptedByName: subAcceptedBy || null,
+          sandboxPayerEmail: subSandboxPayerEmail.trim() || null,
           adminNotes: subNotes || null,
         })
       );
       setSubCustomReais("");
+      setSubSandboxPayerEmail("");
       setSubNotes("");
     } catch (err) {
       setFeedback({ type: "error", text: err instanceof Error ? err.message : "Dados inválidos." });
@@ -249,26 +254,51 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => router.refresh()}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-surface-border bg-surface hover:bg-surface-muted text-xs font-semibold text-foreground transition-colors self-start cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Atualizar indicadores
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button
+            type="button"
+            disabled={busy}
+            data-testid="billing-provider-diagnostic-btn"
+            onClick={() => runAction(() => runOfficialProviderDiagnosticAction())}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-surface-border bg-surface hover:bg-surface-muted text-xs font-semibold text-foreground transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-accent" />
+            Diagnosticar Provedor MP
+          </button>
+          <button
+            type="button"
+            onClick={() => router.refresh()}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-surface-border bg-surface hover:bg-surface-muted text-xs font-semibold text-foreground transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Atualizar indicadores
+          </button>
+        </div>
       </div>
 
-      {/* Aviso transparente do adaptador e política de não suspensão automática */}
-      <div className="rounded-xl border border-surface-border bg-surface-muted/40 px-4 py-3 text-xs text-foreground-muted flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* Aviso transparente do adaptador, validade da configuração e política de não suspensão */}
+      <div
+        className={`rounded-xl border px-4 py-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+          providerStatus.configValid
+            ? "border-surface-border bg-surface-muted/40 text-foreground-muted"
+            : "border-rose-500/35 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+        }`}
+      >
         <div className="flex items-start sm:items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-accent shrink-0 mt-0.5 sm:mt-0" />
+          {providerStatus.configValid ? (
+            <ShieldCheck className="w-4 h-4 text-accent shrink-0 mt-0.5 sm:mt-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5 sm:mt-0" />
+          )}
           <span>
-            <strong className="text-foreground">Governança ativa:</strong> {providerStatus.statusNote} Cobranças reais estão bloqueadas (fail-closed) e nenhuma loja é suspensa automaticamente em caso de atraso.
+            <strong className="text-foreground">
+              {providerStatus.configValid ? "Governança ativa:" : "Atenção (fail-closed):"}
+            </strong>{" "}
+            {providerStatus.statusNote} Cobranças reais estão bloqueadas (fail-closed) e nenhuma loja é suspensa automaticamente em caso de atraso.
           </span>
         </div>
         <span className="font-mono text-[11px] shrink-0 text-foreground">
-          Webhook: {providerStatus.webhookEndpointPath}
+          Webhook: {providerStatus.webhookEndpointPath} ({providerStatus.webhookAuthMode})
         </span>
       </div>
 
@@ -820,6 +850,20 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
                           </>
                         )}
 
+                        {providerStatus.mode === "official_sandbox_api" &&
+                          sub.externalSubscriptionId && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                runAction(() => syncSubscriptionFromProviderAction(sub.id))
+                              }
+                              className="px-3 py-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300 text-xs font-semibold hover:bg-sky-500/20 cursor-pointer disabled:opacity-50"
+                            >
+                              Sincronizar Mercado Pago
+                            </button>
+                          )}
+
                         <button
                           type="button"
                           disabled={busy}
@@ -956,6 +1000,18 @@ export function AdminBillingConsole({ overview }: { overview: GlobalBillingOverv
                   className="w-full px-3 py-2 rounded-lg border border-surface-border bg-background text-xs text-foreground"
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-foreground mb-1">
+                E-mail pagador Sandbox (opcional — Test Buyer MP)
+              </label>
+              <input
+                type="email"
+                value={subSandboxPayerEmail}
+                onChange={(e) => setSubSandboxPayerEmail(e.target.value)}
+                placeholder="ex: test_user_...@testuser.com"
+                className="w-full px-3 py-2 rounded-lg border border-surface-border bg-background text-xs font-mono text-foreground"
+              />
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-foreground mb-1">

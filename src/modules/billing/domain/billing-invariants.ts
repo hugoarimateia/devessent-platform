@@ -152,19 +152,88 @@ export const BillingInvariants = {
   },
 
   /**
-   * Bloqueia fail-closed qualquer tentativa de cobrança real (live) na Fase 6E.2.
+   * Bloqueia fail-closed qualquer tentativa de cobrança real (live) nas fases Sandbox (6E.2 / 6E.2C).
+   *
+   * IMPORTANTE (§4 — Fase 6E.2C):
+   * Credenciais de teste oficiais do Mercado Pago também podem iniciar com `APP_USR-`.
+   * Portanto, este guarda NUNCA presume que prefixo `TEST-` comprova sandbox nem que `APP_USR-`
+   * é automaticamente produção: valida exclusivamente o ambiente declarado e o formato estrutural,
+   * exigindo verificação autoritativa adicional em `GET /users/me` (`tags: ["test_user"]` +
+   * `site_id: "MLB"` + `collector_id` esperado) antes de qualquer operação financeira oficial.
    */
   assertBillingSandboxOnly(environment: string, accessToken?: string): void {
-    if (environment !== "sandbox") {
+    const normalizedEnv = environment.trim().toLowerCase();
+    if (normalizedEnv !== "sandbox") {
       throw new ForbiddenError(
         "FAIL-CLOSED: O módulo DevEssent Billing SaaS opera exclusivamente em modo Sandbox nesta fase. Cobranças reais estão desabilitadas."
       );
     }
-    if (accessToken && accessToken.trim().startsWith("APP_USR-")) {
+    if (accessToken !== undefined) {
+      this.assertValidMercadoPagoTokenFormat(accessToken);
+    }
+  },
+
+  /**
+   * Valida formato estrutural de Access Token Mercado Pago (suporta formatos oficiais `TEST-*`
+   * e `APP_USR-*` de contas de teste, rejeitando tokens vazios, curtos ou com espaços).
+   * ATENÇÃO: formato válido NÃO comprova ambiente Sandbox; exige validação em `/users/me`.
+   */
+  assertValidMercadoPagoTokenFormat(accessToken: string): void {
+    const trimmed = accessToken.trim();
+    if (!trimmed || /\s/.test(trimmed) || trimmed.length < 24) {
       throw new ForbiddenError(
-        "FAIL-CLOSED: Credencial de produção (APP_USR-) bloqueada no ambiente Sandbox do Billing SaaS."
+        "FAIL-CLOSED: BILLING_MP_ACCESS_TOKEN ausente ou com formato estrutural inválido."
       );
     }
+    const hasKnownPrefix = trimmed.startsWith("TEST-") || trimmed.startsWith("APP_USR-");
+    if (!hasKnownPrefix) {
+      throw new ForbiddenError(
+        "FAIL-CLOSED: BILLING_MP_ACCESS_TOKEN deve possuir prefixo oficial Mercado Pago (TEST- ou APP_USR- de conta de teste)."
+      );
+    }
+  },
+
+  /**
+   * Verifica de forma fail-closed a resposta autoritativa de `GET /users/me` do Mercado Pago.
+   * Única comprovação confiável de que um token (`APP_USR-*` ou `TEST-*`) pertence a uma
+   * Conta de Teste oficial do Brasil (MLB) e ao `collector_id` autorizado da DevEssent.
+   */
+  assertOfficialSandboxUserIdentity(params: {
+    userId: string | number | undefined | null;
+    siteId: string | undefined | null;
+    tags: unknown;
+    expectedCollectorId: string;
+  }): { collectorId: string; siteId: "MLB"; isTestUser: true } {
+    const resolvedId = params.userId !== undefined && params.userId !== null ? String(params.userId).trim() : "";
+    const expectedId = params.expectedCollectorId.trim();
+    const resolvedSite = (params.siteId || "").trim().toUpperCase();
+    const tagList = Array.isArray(params.tags)
+      ? params.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase())
+      : [];
+    const isTestUser = tagList.includes("test_user");
+
+    if (!isTestUser) {
+      throw new ForbiddenError(
+        "FAIL-CLOSED: A credencial Mercado Pago configurada não pertence a uma Conta de Teste oficial (tag 'test_user' ausente em /users/me). Operação bloqueada para impedir risco de cobrança real."
+      );
+    }
+    if (resolvedSite !== "MLB") {
+      throw new ForbiddenError(
+        `FAIL-CLOSED: Conta de teste Mercado Pago pertence ao país '${resolvedSite || "desconhecido"}'; obrigatório 'MLB' (Brasil / BRL).`
+      );
+    }
+    if (!expectedId || !/^\d+$/.test(expectedId)) {
+      throw new ForbiddenError(
+        "FAIL-CLOSED: BILLING_MP_COLLECTOR_ID numérico da conta vendedora de teste DevEssent é obrigatório."
+      );
+    }
+    if (!resolvedId || resolvedId !== expectedId) {
+      throw new ForbiddenError(
+        `FAIL-CLOSED: Titularidade divergente em /users/me (recebido collector '${resolvedId || "ausente"}', esperado '${expectedId}'). Operação bloqueada.`
+      );
+    }
+
+    return { collectorId: resolvedId, siteId: "MLB", isTestUser: true };
   },
 
   /**

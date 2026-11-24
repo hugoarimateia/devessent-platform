@@ -38,8 +38,10 @@ import type {
   BillingSubscription,
   BillingSubscriptionHistoryItem,
   BillingSubscriptionStatus,
+  BillingSubscriptionSyncResult,
   BillingWebhookEventView,
   GlobalBillingOverview,
+  OfficialSandboxIdentityVerification,
   TenantOwnerBillingView,
 } from "../types/billing.types";
 import { BillingPlanService } from "./billing-plan-service";
@@ -465,7 +467,10 @@ export class BillingSubscriptionService {
       .maybeSingle();
 
     const ownerProfile = ownerMember?.profiles as { email?: string } | null | undefined;
-    const payerEmail = ownerProfile?.email || `financeiro+${tenant.slug}@devessent.test`;
+    const payerEmail =
+      parsed.sandboxPayerEmail?.trim() ||
+      ownerProfile?.email ||
+      `financeiro+${tenant.slug}@devessent.test`;
 
     const provider = getDefaultBillingProvider();
     const backUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/dashboard/assinatura`;
@@ -1120,6 +1125,214 @@ export class BillingSubscriptionService {
     return {
       ...res,
       externalEventId,
+    };
+  }
+
+  /**
+   * 10. Diagnóstico autoritativo sob demanda das credenciais Mercado Pago Sandbox (Platform Admin ONLY).
+   *     Nunca executado automaticamente durante a navegação das páginas (§13).
+   */
+  public static async runOfficialProviderDiagnostic(params: {
+    actorRole: RoleOrAdmin;
+  }): Promise<OfficialSandboxIdentityVerification> {
+    BillingPermissionService.assertPermission(params.actorRole, "view_global_billing");
+    const provider = getDefaultBillingProvider();
+    return provider.verifyOfficialSandboxCredentials(true);
+  }
+
+  /**
+   * 11. Sincronização autoritativa sob demanda de assinatura + pagamentos autorizados junto ao
+   *     Mercado Pago Sandbox (`GET /preapproval/{id}` + `GET /authorized_payments/search`).
+   *     Platform Admin ONLY; idempotente e sem polling em navegação.
+   */
+  public static async syncSubscriptionFromProvider(params: {
+    supabase: AppSupabaseClient;
+    actorRole: RoleOrAdmin;
+    actorUserId: string;
+    subscriptionId: string;
+  }): Promise<BillingSubscriptionSyncResult> {
+    BillingPermissionService.assertPermission(params.actorRole, "manage_billing_subscriptions");
+
+    const creds = resolveDevEssentBillingCredentials();
+    if (!creds.isOfficialSandboxApi) {
+      throw new ValidationError(
+        "A sincronização externa requer BILLING_PROVIDER_MODE=official_sandbox_api configurado com credenciais da Conta de Teste DevEssent."
+      );
+    }
+
+    const admin = createAdminClient();
+    const { data: sub, error } = await admin
+      .from("billing_subscriptions")
+      .select("*")
+      .eq("id", params.subscriptionId)
+      .maybeSingle();
+
+    if (error || !sub) throw new NotFoundError("Assinatura não localizada.");
+    if (!sub.external_subscription_id) {
+      throw new ValidationError(
+        "Esta assinatura não possui external_subscription_id vinculado no Mercado Pago."
+      );
+    }
+
+    const provider = getDefaultBillingProvider();
+    const checkedAt = new Date().toISOString();
+
+    // 1. Consultar estado autoritativo da assinatura (`GET /preapproval/{id}`)
+    const extSub = await provider.getExternalSubscription(sub.external_subscription_id);
+    if (extSub.externalReference && extSub.externalReference !== sub.external_reference) {
+      throw new ForbiddenError(
+        "VIOLAÇÃO MULTIEMPRESA: external_reference retornada pelo Mercado Pago diverge do contrato."
+      );
+    }
+
+    const today = checkedAt.slice(0, 10);
+    const prevStatus = sub.status as BillingSubscriptionStatus;
+    let newStatus: BillingSubscriptionStatus = prevStatus;
+
+    if (extSub.subscriptionStatus === "active" && prevStatus !== "cancelled") {
+      const canActivateNow = Boolean(sub.activation_confirmed_at) && sub.scheduled_start_date <= today;
+      newStatus =
+        prevStatus === "active" || prevStatus === "cancel_scheduled"
+          ? prevStatus
+          : canActivateNow
+            ? "active"
+            : "awaiting_activation";
+
+      await admin
+        .from("billing_subscriptions")
+        .update({
+          status: newStatus,
+          authorized_at: sub.authorized_at ?? checkedAt,
+          activated_at: newStatus === "active" ? sub.activated_at ?? checkedAt : sub.activated_at,
+          payment_method_type:
+            sub.payment_method_type === "unconfigured" ? "credit_card" : sub.payment_method_type,
+          payment_method_label:
+            sub.payment_method_label ||
+            extSub.paymentMethodLabel ||
+            "Cartão de Crédito (Mercado Pago Sandbox)",
+          next_billing_date: extSub.dueDate || sub.next_billing_date,
+        })
+        .eq("id", sub.id);
+    } else if (extSub.subscriptionStatus === "cancelled" && prevStatus !== "cancelled") {
+      newStatus = "cancelled";
+      await admin
+        .from("billing_subscriptions")
+        .update({
+          status: "cancelled",
+          cancelled_at: checkedAt,
+          next_billing_date: null,
+          cancellation_reason: "Cancelamento confirmado por consulta autoritativa no Mercado Pago.",
+        })
+        .eq("id", sub.id);
+    } else if (
+      extSub.subscriptionStatus === "past_due" &&
+      prevStatus !== "cancelled" &&
+      prevStatus !== "past_due"
+    ) {
+      newStatus = "past_due";
+      await admin
+        .from("billing_subscriptions")
+        .update({
+          status: "past_due",
+          delinquent_since: sub.delinquent_since ?? checkedAt,
+        })
+        .eq("id", sub.id);
+    }
+
+    if (newStatus !== prevStatus) {
+      await admin.from("billing_subscription_history").insert({
+        subscription_id: sub.id,
+        tenant_id: sub.tenant_id,
+        event_type:
+          newStatus === "cancelled"
+            ? "cancelled"
+            : newStatus === "past_due"
+              ? "delinquency_flagged"
+              : "authorized",
+        previous_status: prevStatus,
+        new_status: newStatus,
+        actor_user_id: params.actorUserId,
+        reason: "Sincronização autoritativa manual via GET /preapproval/{id} (Mercado Pago Sandbox).",
+        metadata: extSub.rawSummary as Json,
+      });
+    }
+
+    // 2. Consultar pagamentos autorizados (`GET /authorized_payments/search`) e reconciliar idempotentemente
+    const authorizedPayments = await provider.searchAuthorizedPayments({
+      preapprovalId: sub.external_subscription_id,
+      limit: 20,
+    });
+
+    let syncedCount = 0;
+    for (const ap of authorizedPayments) {
+      const dueDate = ap.dueDate || sub.next_billing_date || sub.scheduled_start_date;
+      const cycleKey = ap.billingCycleKey || BillingInvariants.buildBillingCycleKey(dueDate);
+      const status = ap.invoiceStatus || "pending";
+      const amountCents = ap.amountCents || sub.contracted_amount_cents;
+      const syncEventId = `sync:mp:authpay:${ap.externalResourceId}:${status}`;
+
+      const { data: rpcRes } = await admin.rpc("reconcile_billing_invoice_tx", {
+        p_subscription_id: sub.id,
+        p_provider: "mercado_pago",
+        p_external_event_id: syncEventId,
+        p_event_type: "subscription_authorized_payment.admin_sync",
+        p_signature_verified: true,
+        p_billing_cycle_key: cycleKey,
+        p_external_payment_id: ap.externalResourceId,
+        p_authoritative_status: status,
+        p_amount_cents: amountCents,
+        p_currency: "BRL",
+        p_due_date: dueDate,
+        p_payment_method_type: sub.payment_method_type || "credit_card",
+        p_payment_method_label: ap.paymentMethodLabel || sub.payment_method_label || undefined,
+        p_failure_code: ap.failureCode || undefined,
+        p_failure_reason: ap.failureReason || undefined,
+        p_payload_summary: {
+          ...ap.rawSummary,
+          providerOrigin: "mercado_pago_official_sandbox",
+          authMethod: "admin_authoritative_sync",
+          hmacSignatureVerified: false,
+        } as Json,
+      });
+
+      const rpcObj = (rpcRes ?? {}) as { outcome?: string; subscriptionStatus?: string };
+      if (rpcObj.outcome === "processed") {
+        syncedCount++;
+      }
+      if (rpcObj.subscriptionStatus) {
+        newStatus = rpcObj.subscriptionStatus as BillingSubscriptionStatus;
+      }
+    }
+
+    await AuditService.recordEvent({
+      supabase: admin,
+      tenantId: sub.tenant_id,
+      actorUserId: params.actorUserId,
+      action: "billing.subscription_updated",
+      resourceType: "billing_subscription",
+      resourceId: sub.id,
+      metadata: {
+        syncType: "official_mp_sandbox_manual_sync",
+        externalSubscriptionId: sub.external_subscription_id,
+        previousStatus: prevStatus,
+        newStatus,
+        authorizedPaymentsFound: authorizedPayments.length,
+        authorizedPaymentsSynced: syncedCount,
+      },
+    });
+
+    const rawStatus =
+      typeof extSub.rawSummary?.mpStatus === "string" ? extSub.rawSummary.mpStatus : null;
+
+    return {
+      subscriptionId: sub.id,
+      externalSubscriptionId: sub.external_subscription_id,
+      previousStatus: prevStatus,
+      newStatus,
+      providerStatusRaw: rawStatus,
+      authorizedPaymentsSynced: syncedCount,
+      providerOrigin: "mercado_pago_official_sandbox",
+      checkedAt,
     };
   }
 }

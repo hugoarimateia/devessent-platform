@@ -213,6 +213,45 @@ export async function simulateSandboxChargeAction(
   }
 }
 
+export async function runOfficialProviderDiagnosticAction(): Promise<BillingActionResult> {
+  try {
+    await requirePlatformAdminActor();
+    const res = await BillingSubscriptionService.runOfficialProviderDiagnostic({
+      actorRole: "platform_admin",
+    });
+    return {
+      success: true,
+      data: res,
+      message: res.diagnosticMessage,
+    };
+  } catch (err) {
+    return handleActionError(err, "Falha no diagnóstico autoritativo do Mercado Pago Sandbox.");
+  }
+}
+
+export async function syncSubscriptionFromProviderAction(
+  subscriptionId: string
+): Promise<BillingActionResult> {
+  try {
+    const { sessionUser, supabase } = await requirePlatformAdminActor();
+    const res = await BillingSubscriptionService.syncSubscriptionFromProvider({
+      supabase,
+      actorRole: "platform_admin",
+      actorUserId: sessionUser.id,
+      subscriptionId,
+    });
+    revalidatePath("/admin/comercial");
+    revalidatePath("/dashboard/assinatura");
+    return {
+      success: true,
+      data: res,
+      message: `Sincronização Mercado Pago concluída (status: ${res.newStatus} · faturas conciliadas: ${res.authorizedPaymentsSynced}).`,
+    };
+  } catch (err) {
+    return handleActionError(err, "Erro ao sincronizar assinatura com o Mercado Pago Sandbox.");
+  }
+}
+
 export async function createImplementationContractAction(
   input: CreateImplementationContractInput
 ): Promise<BillingActionResult> {

@@ -4,7 +4,14 @@ import type {
   BillingProviderName,
   BillingProviderRuntimeStatus,
   BillingSubscriptionStatus,
+  OfficialSandboxIdentityVerification,
 } from "../types/billing.types";
+
+export type BillingWebhookResourceType =
+  | "subscription_preapproval"
+  | "subscription_authorized_payment"
+  | "payment"
+  | "subscription_preapproval_plan";
 
 export interface CreateExternalSubscriptionInput {
   subscriptionId: string;
@@ -46,10 +53,12 @@ export interface AuthoritativeBillingEvent {
   provider: BillingProviderName;
   externalEventId: string;
   eventType: string;
-  resourceType: "subscription_preapproval" | "subscription_authorized_payment";
+  resourceType: BillingWebhookResourceType;
   externalResourceId: string;
   externalSubscriptionId: string | null;
   externalReference: string | null;
+  collectorId?: string | null;
+  applicationId?: string | null;
   invoiceStatus: BillingInvoiceStatus | null;
   subscriptionStatus: BillingSubscriptionStatus | null;
   amountCents: number | null;
@@ -62,12 +71,42 @@ export interface AuthoritativeBillingEvent {
   rawSummary: Record<string, unknown>;
 }
 
+export interface VerifiedBillingWebhookHeader {
+  externalEventId: string;
+  eventType: string;
+  resourceType: BillingWebhookResourceType;
+  externalResourceId: string;
+  signatureVerified: boolean;
+  authMethod: "hmac_sha256" | "authoritative_fallback";
+}
+
 export interface BillingProvider {
   readonly providerName: BillingProviderName;
   getRuntimeStatus(): BillingProviderRuntimeStatus;
+  verifyOfficialSandboxCredentials(
+    forceRefresh?: boolean
+  ): Promise<OfficialSandboxIdentityVerification>;
   createRecurringAuthorization(
     input: CreateExternalSubscriptionInput
   ): Promise<CreatedExternalSubscription>;
+  getExternalSubscription(externalSubscriptionId: string): Promise<AuthoritativeBillingEvent>;
+  searchExternalSubscriptions(params: {
+    externalReference?: string;
+    payerEmail?: string;
+    limit?: number;
+  }): Promise<AuthoritativeBillingEvent[]>;
+  getAuthorizedPayment(authorizedPaymentId: string): Promise<AuthoritativeBillingEvent>;
+  searchAuthorizedPayments(params: {
+    preapprovalId?: string;
+    externalReference?: string;
+    limit?: number;
+  }): Promise<AuthoritativeBillingEvent[]>;
+  updateExternalSubscription(params: {
+    externalSubscriptionId: string;
+    status?: "paused" | "authorized" | "cancelled";
+    reason?: string;
+    autoRecurringAmountCents?: number;
+  }): Promise<{ updated: boolean; providerStatus: string }>;
   confirmSandboxAuthorization(
     input: AuthorizeExternalSubscriptionInput
   ): Promise<{ authorized: boolean; paymentMethodLabel: string }>;
@@ -82,14 +121,9 @@ export interface BillingProvider {
     headers: Record<string, string | undefined>;
     query: Record<string, string | undefined>;
     rawBody: string;
-  }): {
-    externalEventId: string;
-    eventType: string;
-    resourceType: "subscription_preapproval" | "subscription_authorized_payment";
-    externalResourceId: string;
-  };
+  }): VerifiedBillingWebhookHeader;
   fetchAuthoritativeEventResource(params: {
-    resourceType: "subscription_preapproval" | "subscription_authorized_payment";
+    resourceType: BillingWebhookResourceType;
     externalResourceId: string;
     rawBodyObj?: Record<string, unknown>;
   }): Promise<AuthoritativeBillingEvent>;

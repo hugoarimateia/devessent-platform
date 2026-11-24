@@ -3,6 +3,7 @@ import {
   ForbiddenError,
   NotFoundError,
   RateLimitError,
+  ServiceUnavailableError,
   UnauthorizedError,
   ValidationError,
 } from "@/core/errors/app-error";
@@ -128,6 +129,15 @@ export async function POST(
       return NextResponse.json(
         { ok: false, error: "INVALID_BILLING_WEBHOOK_PAYLOAD" },
         { status: 400, headers: noStoreHeaders }
+      );
+    }
+    if (err instanceof ServiceUnavailableError) {
+      return NextResponse.json(
+        { ok: false, error: "BILLING_WEBHOOK_TEMPORARY_UNAVAILABLE", retryable: true },
+        {
+          status: 503,
+          headers: { ...noStoreHeaders, "Retry-After": "30" },
+        }
       );
     }
     return NextResponse.json(
