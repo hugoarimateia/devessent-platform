@@ -1,20 +1,17 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService } from "@/core/tenants";
-import { NotFoundError, TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import {
-  RetailOrderDetail,
-  RetailOrderService,
-  RetailPaymentService,
-  RetailPermissionService,
-  RetailStoreService,
-} from "@/modules/retail";
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { NotFoundError } from "@/core/errors/app-error";
+import { RetailOrderDetail } from "@/modules/retail/components/retail-order-detail";
+import { RetailOrderService } from "@/modules/retail/services/retail-order-service";
+import { RetailPaymentService } from "@/modules/retail/services/retail-payment-service";
+import { RetailPermissionService } from "@/modules/retail/permissions/retail-permissions";
 
 export const metadata: Metadata = {
   title: "Detalhes do Pedido | DevEssent Platform",
@@ -25,70 +22,82 @@ interface RetailOrderDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function RetailOrderDetailPage({ params }: RetailOrderDetailPageProps) {
-  const { id } = await params;
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+export default async function RetailOrderDetailPage({
+  params,
+}: RetailOrderDetailPageProps) {
+  const [{ id }, supabase] = await Promise.all([params, createClient()]);
 
-  if (!sessionUser) {
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
+
+  const [workspace, prefetchedOrder, prefetchedConn, prefetchedPayment] =
+    await Promise.all([
+      resolveWorkspaceSession(),
+      speculativeCtx
+        ? RetailOrderService.getOrderById(supabase, speculativeCtx, id).catch(
+            () => null
+          )
+        : Promise.resolve(null),
+      speculativeCtx
+        ? RetailPaymentService.getConnectionSummary({
+            supabase,
+            context: speculativeCtx,
+          }).catch(() => null)
+        : Promise.resolve(null),
+      speculativeCtx
+        ? RetailPaymentService.getPaymentByOrderId({
+            supabase,
+            context: speculativeCtx,
+            orderId: id,
+          }).catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
+
+  if (!workspace.sessionUser) {
     redirect(`/login?redirect=/dashboard/retail/pedidos/${id}`);
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
-  if (!selectedTenant) {
+
+  const { activeContext, activeRetailStore: store } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole={selectedTenant.role}
-        >
-          <SuspendedTenantState tenantName={selectedTenant.name} />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
-
-  if (!RetailPermissionService.hasPermission(activeContext.role, "view_retail_orders")) {
+  if (
+    !RetailPermissionService.hasPermission(
+      activeContext.role,
+      "view_retail_orders"
+    )
+  ) {
     redirect("/forbidden");
   }
 
-  const store = await RetailStoreService.getStore(supabase, activeContext.tenantId);
   if (!store) {
     notFound();
   }
 
-  let order;
-  try {
-    order = await RetailOrderService.getOrderById(supabase, activeContext, id);
-  } catch (err) {
-    if (err instanceof NotFoundError) {
-      notFound();
+  const hintMatched = Boolean(
+    hintTenantId && activeContext.tenantId === hintTenantId
+  );
+
+  let order = hintMatched ? prefetchedOrder : null;
+  if (!order) {
+    try {
+      order = await RetailOrderService.getOrderById(supabase, activeContext, id);
+    } catch (err) {
+      if (err instanceof NotFoundError) {
+        notFound();
+      }
+      throw err;
     }
-    throw err;
   }
 
   const canManageOrders = RetailPermissionService.hasPermission(
@@ -97,34 +106,30 @@ export default async function RetailOrderDetailPage({ params }: RetailOrderDetai
   );
 
   const [paymentConnection, linkedPayment] = await Promise.all([
-    RetailPaymentService.getConnectionSummary({
-      supabase,
-      context: activeContext,
-    }),
-    RetailPaymentService.getPaymentByOrderId({
-      supabase,
-      context: activeContext,
-      orderId: order.id,
-    }),
+    hintMatched && prefetchedConn !== null
+      ? Promise.resolve(prefetchedConn)
+      : RetailPaymentService.getConnectionSummary({
+          supabase,
+          context: activeContext,
+        }),
+    hintMatched && prefetchedPayment !== undefined
+      ? Promise.resolve(prefetchedPayment)
+      : RetailPaymentService.getPaymentByOrderId({
+          supabase,
+          context: activeContext,
+          orderId: order.id,
+        }),
   ]);
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
-      <RetailOrderDetail
-        tenantId={activeContext.tenantId}
-        storeName={store.storeName}
-        inventoryMode={store.inventoryMode}
-        order={order}
-        canManageOrders={canManageOrders}
-        paymentConnection={paymentConnection}
-        linkedPayment={linkedPayment}
-      />
-    </AppShell>
+    <RetailOrderDetail
+      tenantId={activeContext.tenantId}
+      storeName={store.storeName}
+      inventoryMode={store.inventoryMode}
+      order={order}
+      canManageOrders={canManageOrders}
+      paymentConnection={paymentConnection}
+      linkedPayment={linkedPayment}
+    />
   );
 }

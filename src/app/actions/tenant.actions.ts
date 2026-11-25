@@ -36,17 +36,22 @@ export async function switchTenantAction(tenantSlugOrId: string) {
   }
 
   // Validação estrita no servidor: verificar se o usuário realmente tem acesso à empresa alvo
-  await TenantService.resolveTenantContext(supabase, sessionUser.id, tenantSlugOrId);
+  const resolvedContext = await TenantService.resolveTenantContext(
+    supabase,
+    sessionUser.id,
+    tenantSlugOrId
+  );
 
-  // Armazenar preferência de tenant ativo em cookie seguro
+  // Armazenar UUID canônico de tenant ativo em cookie seguro
   const cookieStore = await cookies();
-  cookieStore.set(getActiveTenantCookieName(), tenantSlugOrId, {
+  cookieStore.set(getActiveTenantCookieName(), resolvedContext.tenantId, {
     path: "/",
     sameSite: "lax",
     httpOnly: true,
     maxAge: 60 * 60 * 24 * 30, // 30 dias
   });
 
+  revalidatePath("/dashboard", "layout");
   redirect("/dashboard");
 }
 

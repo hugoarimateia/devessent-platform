@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { resolveWorkspaceSession } from "@/lib/workspace/workspace-context";
 import { TenantService } from "@/core/tenants";
-import { TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { RoleBadge } from "@/components/ui/role-badge";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
 import { SettingsForm } from "@/components/dashboard/settings-form";
 
 export const metadata: Metadata = {
@@ -18,67 +13,33 @@ export const metadata: Metadata = {
 };
 
 export default async function ConfiguracoesPage() {
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const workspace = await resolveWorkspaceSession();
 
-  if (!sessionUser) {
+  if (!workspace.sessionUser) {
     redirect("/login?redirect=/dashboard/configuracoes");
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  if (!selectedTenant) {
+  const { activeContext } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole={selectedTenant.role}
-        >
-          <SuspendedTenantState tenantName={selectedTenant.name} />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
+  // Reutiliza configurações já trazidas no bootstrap consolidado (0 roundtrip extra)
+  const settings =
+    workspace.activeTenantSettings ??
+    (await TenantService.getSettings(await createClient(), activeContext));
 
-  const settings = await TenantService.getSettings(supabase, activeContext);
   const canEdit =
     activeContext.role === "owner" ||
     activeContext.role === "manager" ||
     activeContext.role === "platform_admin";
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
+    <>
       <PageHeader
         breadcrumbs={[
           { label: activeContext.tenantName, href: "/dashboard" },
@@ -102,6 +63,6 @@ export default async function ConfiguracoesPage() {
         initialSettings={settings}
         canEdit={canEdit}
       />
-    </AppShell>
+    </>
   );
 }

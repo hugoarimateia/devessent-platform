@@ -429,61 +429,40 @@ export class RetailProductService {
       supabase
         .from("retail_products")
         .select(
-          `
-          *,
-          retail_variants(*),
-          retail_product_images(*),
-          retail_product_options(*),
-          retail_product_categories(
-            retail_categories(*)
-          )
-        `
+          "id, status, retail_variants(stock_quantity), retail_product_categories(category_id)"
         )
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
-        .limit(100),
+        .limit(200),
       supabase
         .from("retail_categories")
-        .select("*")
+        .select("id, name, is_active")
         .eq("tenant_id", tenantId)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true }),
     ]);
 
-    const categoryRows = (categoriesRes.data || []) as RetailCategoryRow[];
-    const categoryCountMap = new Map<string, { categoryId: string; name: string; productCount: number }>();
+    const categoryRows = (categoriesRes.data || []) as Array<{
+      id: string;
+      name: string;
+      is_active: boolean;
+    }>;
+    const categoryCountMap = new Map<
+      string,
+      { categoryId: string; name: string; productCount: number }
+    >();
     for (const c of categoryRows) {
       if (c.is_active) {
         categoryCountMap.set(c.id, { categoryId: c.id, name: c.name, productCount: 0 });
       }
     }
 
-    const assembledProducts = ((productsRes.data || []) as Array<
-      RetailProductRow & {
-        retail_variants?: RetailVariantRow[];
-        retail_product_options?: RetailProductOptionRow[];
-        retail_product_images?: RetailProductImageRow[];
-        retail_product_categories?: Array<{ retail_categories: RetailCategoryRow }>;
-      }
-    >).map((rowItem) => {
-      const categories = (rowItem.retail_product_categories || [])
-        .map((rpc) => rpc.retail_categories)
-        .filter(Boolean);
-
-      for (const c of categories) {
-        const entry = categoryCountMap.get(c.id);
-        if (entry) entry.productCount += 1;
-      }
-
-      return this.assembleProductWithDetails(
-        supabase,
-        rowItem,
-        categories,
-        rowItem.retail_variants || [],
-        rowItem.retail_product_options || [],
-        rowItem.retail_product_images || []
-      );
-    });
+    const productRows = (productsRes.data || []) as Array<{
+      id: string;
+      status: string;
+      retail_variants?: Array<{ stock_quantity: number }>;
+      retail_product_categories?: Array<{ category_id: string }>;
+    }>;
 
     let publishedProducts = 0;
     let draftProducts = 0;
@@ -492,15 +471,26 @@ export class RetailProductService {
     let lowStockProducts = 0;
     let totalStockUnits = 0;
 
-    for (const p of assembledProducts) {
-      if (p.status === "published") publishedProducts++;
-      if (p.status === "draft") draftProducts++;
-      if (p.status === "archived") archivedProducts++;
+    for (const rowItem of productRows) {
+      if (rowItem.status === "published") publishedProducts++;
+      if (rowItem.status === "draft") draftProducts++;
+      if (rowItem.status === "archived") archivedProducts++;
 
-      totalStockUnits += p.totalStock;
-      if (p.variants.length === 0 || p.totalStock === 0) {
+      for (const rpc of rowItem.retail_product_categories || []) {
+        const entry = categoryCountMap.get(rpc.category_id);
+        if (entry) entry.productCount += 1;
+      }
+
+      const variants = rowItem.retail_variants || [];
+      const productStock = variants.reduce(
+        (sum, v) => sum + (v.stock_quantity || 0),
+        0
+      );
+      totalStockUnits += productStock;
+
+      if (variants.length === 0 || productStock === 0) {
         outOfStockProducts++;
-      } else if (p.totalStock > 0 && p.totalStock <= 5) {
+      } else if (productStock > 0 && productStock <= 5) {
         lowStockProducts++;
       }
     }
@@ -511,7 +501,7 @@ export class RetailProductService {
 
     return {
       stats: {
-        totalProducts: assembledProducts.length,
+        totalProducts: productRows.length,
         publishedProducts,
         draftProducts,
         archivedProducts,
@@ -521,7 +511,7 @@ export class RetailProductService {
       lowStockProducts,
       totalStockUnits,
       categoryDistribution,
-      recentProducts: assembledProducts.slice(0, 5),
+      recentProducts: [],
     };
   }
 

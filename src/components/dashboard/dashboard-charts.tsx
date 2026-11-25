@@ -75,6 +75,7 @@ export function CategoryDistributionChart({
           </p>
           <Link
             href="/dashboard/retail"
+            prefetch={false}
             className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
           >
             <span>Acessar painel Retail</span>
@@ -89,6 +90,7 @@ export function CategoryDistributionChart({
           </p>
           <Link
             href="/dashboard/retail/categorias"
+            prefetch={false}
             className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
           >
             <span>Criar primeira categoria</span>

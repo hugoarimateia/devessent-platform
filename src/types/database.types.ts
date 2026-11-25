@@ -839,7 +839,15 @@ isOneToOne: false
                   Update: {
                     "created_at"?: string,"id"?: string,"image_url_snapshot"?: string | null,"line_total_cents"?: number,"order_id"?: string,"product_id"?: string | null,"product_name_snapshot"?: string,"quantity"?: number,"sku_snapshot"?: string,"tenant_id"?: string,"unit_price_cents"?: number,"variant_id"?: string | null,"variant_name_snapshot"?: string
                   }
-                  Relationships: []
+                  Relationships: [
+                    {
+                      foreignKeyName: "retail_order_items_order_id_fkey"
+                      columns: ["order_id"]
+                      isOneToOne: false
+                      referencedRelation: "retail_orders"
+                      referencedColumns: ["id"]
+                    }
+                  ]
                 },"retail_order_status_history": {
                   Row: {
                     "changed_by_name_snapshot": string | null,"changed_by_user_id": string | null,"created_at": string,"from_status": string | null,"id": string,"order_id": string,"reason": string | null,"tenant_id": string,"to_status": string

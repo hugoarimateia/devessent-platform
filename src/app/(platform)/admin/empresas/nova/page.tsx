@@ -1,7 +1,4 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { NewTenantForm } from "@/components/admin/new-tenant-form";
 
@@ -10,12 +7,9 @@ export const metadata: Metadata = {
   description: "Provisionamento atômico de estabelecimento SaaS multiempresa.",
 };
 
-export default async function NovaEmpresaPage() {
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
-
+export default function NovaEmpresaPage() {
   return (
-    <AppShell user={sessionUser!} contextMode="platform">
+    <>
       <PageHeader
         breadcrumbs={[
           { label: "Console Central", href: "/admin" },
@@ -28,6 +22,6 @@ export default async function NovaEmpresaPage() {
       />
 
       <NewTenantForm />
-    </AppShell>
+    </>
   );
 }

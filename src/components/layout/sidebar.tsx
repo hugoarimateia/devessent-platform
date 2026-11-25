@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -38,6 +38,56 @@ export interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
+function SidebarNavItemContent({
+  label,
+  Icon,
+  isActive,
+  collapsed,
+}: {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  isActive: boolean;
+  collapsed: boolean;
+}) {
+  const { pending } = useLinkStatus();
+  const isHighlighted = isActive || pending;
+
+  return (
+    <span
+      data-nav-pending={pending ? "true" : undefined}
+      className={`group relative flex items-center w-full ${
+        collapsed ? "justify-center px-2" : "px-3 gap-2.5"
+      } py-2 rounded-[10px] text-[13px] font-medium transition-all ${
+        isHighlighted
+          ? "bg-accent/10 text-foreground dark:bg-gradient-to-r dark:from-accent/25 dark:to-accent/10 dark:text-white ring-1 ring-accent/25 dark:ring-accent/35 font-semibold shadow-2xs"
+          : "text-foreground-muted hover:text-foreground hover:bg-surface-muted"
+      }`}
+    >
+      {isHighlighted && !collapsed && (
+        <span
+          aria-hidden="true"
+          className={`w-1 h-4 rounded-full shrink-0 bg-accent ${
+            pending ? "animate-pulse" : ""
+          }`}
+        />
+      )}
+      <Icon
+        className={`w-4 h-4 shrink-0 ${
+          isHighlighted ? "text-accent dark:text-[#B9A4FF]" : ""
+        }`}
+        aria-hidden="true"
+      />
+      {!collapsed && <span className="truncate flex-1">{label}</span>}
+      {pending && !collapsed && (
+        <span
+          aria-hidden="true"
+          className="w-1.5 h-1.5 rounded-full bg-accent animate-ping shrink-0"
+        />
+      )}
+    </span>
+  );
+}
+
 export function Sidebar({
   user,
   contextMode,
@@ -48,6 +98,7 @@ export function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   const pathname = usePathname();
+
   const activeTenant =
     tenants.find((t) => t.tenantId === activeTenantId) || tenants[0];
 
@@ -121,25 +172,14 @@ export function Sidebar({
       prefetch={false}
       aria-current={isActive ? "page" : undefined}
       title={collapsed ? label : undefined}
-      className={`group relative flex items-center ${
-        collapsed ? "justify-center px-2" : "px-3 gap-2.5"
-      } py-2 rounded-[10px] text-[13px] font-medium transition-all ${
-        isActive
-          ? "bg-accent/10 text-foreground dark:bg-gradient-to-r dark:from-accent/25 dark:to-accent/10 dark:text-white ring-1 ring-accent/25 dark:ring-accent/35 font-semibold shadow-2xs"
-          : "text-foreground-muted hover:text-foreground hover:bg-surface-muted"
-      }`}
+      className="block rounded-[10px]"
     >
-      {isActive && !collapsed && (
-        <span
-          aria-hidden="true"
-          className="w-1 h-4 rounded-full shrink-0 bg-accent"
-        />
-      )}
-      <Icon
-        className={`w-4 h-4 shrink-0 ${isActive ? "text-accent dark:text-[#B9A4FF]" : ""}`}
-        aria-hidden="true"
+      <SidebarNavItemContent
+        label={label}
+        Icon={Icon}
+        isActive={isActive}
+        collapsed={collapsed}
       />
-      {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   );
 

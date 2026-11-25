@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService, MembershipService, InvitationService } from "@/core/tenants";
-import { TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import {
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { MembershipService, InvitationService } from "@/core/tenants";
 import { PageHeader } from "@/components/layout/page-header";
 import { RoleBadge } from "@/components/ui/role-badge";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
 import { MembersManager } from "@/components/dashboard/members-manager";
 
 export const metadata: Metadata = {
@@ -19,74 +19,63 @@ export const metadata: Metadata = {
 
 export default async function MembrosPage() {
   const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
 
-  if (!sessionUser) {
+  const [workspace, prefetchedMembers, prefetchedInvitations] =
+    await Promise.all([
+      resolveWorkspaceSession(),
+      speculativeCtx
+        ? MembershipService.listMembers(supabase, speculativeCtx).catch(() => null)
+        : Promise.resolve(null),
+      speculativeCtx
+        ? InvitationService.listInvitations(supabase, speculativeCtx, {
+            includeHistory: true,
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+  if (!workspace.sessionUser) {
     redirect("/login?redirect=/dashboard/membros");
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  if (!selectedTenant) {
+  const { sessionUser, activeContext } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
-  }
-
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole={selectedTenant.role}
-        >
-          <SuspendedTenantState tenantName={selectedTenant.name} />
-        </AppShell>
-      );
-    }
-    throw err;
   }
 
   const canManageInvitations =
     activeContext.role === "owner" ||
     activeContext.role === "manager" ||
     activeContext.role === "platform_admin";
+  const hintMatched = Boolean(
+    hintTenantId && activeContext.tenantId === hintTenantId
+  );
 
   const [members, invitations] = await Promise.all([
-    MembershipService.listMembers(supabase, activeContext),
+    hintMatched && prefetchedMembers !== null
+      ? Promise.resolve(prefetchedMembers)
+      : MembershipService.listMembers(supabase, activeContext),
     canManageInvitations
-      ? InvitationService.listInvitations(supabase, activeContext, {
-          includeHistory: true,
-        }).catch(() => [])
+      ? hintMatched && prefetchedInvitations !== null
+        ? Promise.resolve(prefetchedInvitations)
+        : InvitationService.listInvitations(supabase, activeContext, {
+            includeHistory: true,
+          }).catch(() => [])
       : Promise.resolve([]),
   ]);
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
+    <>
       <PageHeader
         breadcrumbs={[
           { label: activeContext.tenantName, href: "/dashboard" },
@@ -110,6 +99,6 @@ export default async function MembrosPage() {
         members={members}
         invitations={invitations}
       />
-    </AppShell>
+    </>
   );
 }

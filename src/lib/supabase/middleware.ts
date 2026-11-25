@@ -2,8 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database.types";
 import { env } from "@/lib/environment/env";
+import {
+  createMiddlewareAuthBridgeHeader,
+  MW_AUTH_BRIDGE_HEADER,
+} from "./auth-bridge";
+import { logPerfSpan, perfNow } from "@/lib/perf/perf-trace";
 
-function getExpectedSupabaseCookiePrefix(): string {
+export function getExpectedSupabaseCookiePrefix(): string {
   try {
     const hostname = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname;
     const ref = hostname.split(".")[0];
@@ -17,8 +22,16 @@ function getExpectedSupabaseCookiePrefix(): string {
 }
 
 export async function updateSession(request: NextRequest) {
+  const tStart = perfNow();
+
+  // Remove incondicionalmente qualquer header de ponte forjado pelo cliente
+  const cleanHeaders = new Headers(request.headers);
+  cleanHeaders.delete(MW_AUTH_BRIDGE_HEADER);
+
   let supabaseResponse = NextResponse.next({
-    request,
+    request: {
+      headers: cleanHeaders,
+    },
   });
 
   // Verifica somente cookies de sessão pertencentes ao projeto Supabase ativo,
@@ -32,6 +45,12 @@ export async function updateSession(request: NextRequest) {
     return { supabaseResponse, user: null };
   }
 
+  let pendingCookies: Array<{
+    name: string;
+    value: string;
+    options?: Parameters<typeof supabaseResponse.cookies.set>[2];
+  }> = [];
+
   const supabase = createServerClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -40,12 +59,21 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Parameters<typeof supabaseResponse.cookies.set>[2] }>) {
+        setAll(
+          cookiesToSet: Array<{
+            name: string;
+            value: string;
+            options?: Parameters<typeof supabaseResponse.cookies.set>[2];
+          }>
+        ) {
+          pendingCookies = cookiesToSet;
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
-            request,
+            request: {
+              headers: cleanHeaders,
+            },
           });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -55,11 +83,46 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANTE: Nunca remover getClaims / getUser para refresh seguro da sessão
+  // IMPORTANTE: Nunca remover getUser() — validação autoritativa junto ao GoTrue + refresh de sessão
   try {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
+    logPerfSpan("middleware", "supabase.auth.getUser", perfNow() - tStart, {
+      path: request.nextUrl.pathname,
+      authenticated: Boolean(user),
+    });
+
+    if (user) {
+      const bridgeToken = await createMiddlewareAuthBridgeHeader({
+        user: {
+          id: user.id,
+          email: user.email || "",
+          fullName:
+            typeof user.user_metadata?.full_name === "string"
+              ? user.user_metadata.full_name
+              : null,
+          createdAt: user.created_at,
+        },
+        cookiesList: request.cookies.getAll(),
+        cookiePrefix: expectedPrefix,
+      });
+
+      if (bridgeToken) {
+        const forwardedHeaders = new Headers(cleanHeaders);
+        forwardedHeaders.set(MW_AUTH_BRIDGE_HEADER, bridgeToken);
+        const bridgedResponse = NextResponse.next({
+          request: {
+            headers: forwardedHeaders,
+          },
+        });
+        pendingCookies.forEach(({ name, value, options }) =>
+          bridgedResponse.cookies.set(name, value, options)
+        );
+        supabaseResponse = bridgedResponse;
+      }
+    }
 
     return { supabaseResponse, user };
   } catch (err) {

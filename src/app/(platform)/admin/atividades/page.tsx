@@ -3,14 +3,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { resolveSessionUserCached } from "@/lib/workspace/workspace-context";
 import {
   AuditService,
   AUDIT_FILTER_ACTION_OPTIONS,
   type AuditPeriodFilter,
 } from "@/core/audit";
 import { TenantService } from "@/core/tenants";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { AuditLogViewer } from "@/components/audit/audit-log-viewer";
 import { Building2 } from "lucide-react";
@@ -38,9 +37,11 @@ const VALID_PERIODS = new Set(["7d", "30d", "90d", "all"]);
 export default async function AdminAtividadesPage({
   searchParams,
 }: AdminAtividadesPageProps) {
-  const params = await searchParams;
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const [params, supabase, sessionUser] = await Promise.all([
+    searchParams,
+    createClient(),
+    resolveSessionUserCached(),
+  ]);
 
   if (!sessionUser) {
     redirect("/login?redirect=/admin/atividades");
@@ -72,7 +73,7 @@ export default async function AdminAtividadesPage({
   ]);
 
   return (
-    <AppShell user={sessionUser} contextMode="platform">
+    <>
       <PageHeader
         breadcrumbs={[
           { label: "Visão Global", href: "/admin" },
@@ -114,7 +115,6 @@ export default async function AdminAtividadesPage({
           search: params.search,
         }}
       />
-    </AppShell>
+    </>
   );
 }
-

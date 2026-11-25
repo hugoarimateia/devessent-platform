@@ -511,6 +511,7 @@ export function RetailPaymentsTable({
                       >
                         <Link
                           href={`/dashboard/retail/pedidos/${item.orderId}`}
+                          prefetch={false}
                           className="font-mono text-xs font-bold text-brand-primary hover:underline"
                         >
                           {item.orderNumber || item.orderId.slice(0, 8)}
@@ -580,6 +581,7 @@ export function RetailPaymentsTable({
                       <td className="py-3.5 px-4 text-right border-b border-surface-border whitespace-nowrap">
                         <Link
                           href={`/dashboard/retail/pagamentos/${item.id}`}
+                          prefetch={false}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-surface-border bg-surface hover:bg-surface-muted text-xs font-medium text-foreground transition-colors"
                         >
                           Detalhes

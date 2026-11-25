@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { resolveSessionUserCached } from "@/lib/workspace/workspace-context";
 import { TenantService } from "@/core/tenants";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { TenantsManager } from "@/components/admin/tenants-manager";
 import { PlusCircle } from "lucide-react";
@@ -15,17 +14,23 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminEmpresasPage() {
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const sessionUser = await resolveSessionUserCached();
+
+  if (!sessionUser) {
+    redirect("/login?redirect=/admin/empresas");
+  }
+  if (!sessionUser.isPlatformAdmin) {
+    redirect("/forbidden");
+  }
 
   const adminSupabase = createAdminClient();
   const tenants = await TenantService.listAllTenants(
     adminSupabase,
-    sessionUser!.id
+    sessionUser.id
   );
 
   return (
-    <AppShell user={sessionUser!} contextMode="platform">
+    <>
       <PageHeader
         breadcrumbs={[
           { label: "Console Central", href: "/admin" },
@@ -46,6 +51,6 @@ export default async function AdminEmpresasPage() {
       />
 
       <TenantsManager tenants={tenants} />
-    </AppShell>
+    </>
   );
 }

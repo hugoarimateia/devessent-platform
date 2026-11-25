@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   X,
@@ -36,6 +36,33 @@ interface MobileNavigationProps {
   tenants?: UserTenantSummary[];
   activeTenantId?: string;
   activeRole?: string;
+}
+
+function MobileNavItemContent({
+  label,
+  Icon,
+  isActive,
+}: {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  isActive: boolean;
+}) {
+  const { pending } = useLinkStatus();
+  const isHighlighted = isActive || pending;
+
+  return (
+    <span
+      data-nav-pending={pending ? "true" : undefined}
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors ${
+        isHighlighted
+          ? "bg-accent/10 text-foreground dark:bg-accent/20 dark:text-white ring-1 ring-accent/25 font-semibold"
+          : "text-foreground-muted hover:text-foreground hover:bg-surface-muted"
+      }`}
+    >
+      <Icon className={`w-4 h-4 shrink-0 ${isHighlighted ? "text-accent" : ""}`} />
+      <span>{label}</span>
+    </span>
+  );
 }
 
 export function MobileNavigation({
@@ -141,14 +168,9 @@ export function MobileNavigation({
       prefetch={false}
       onClick={onClose}
       aria-current={isActive ? "page" : undefined}
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors ${
-        isActive
-          ? "bg-accent/10 text-foreground dark:bg-accent/20 dark:text-white ring-1 ring-accent/25 font-semibold"
-          : "text-foreground-muted hover:text-foreground hover:bg-surface-muted"
-      }`}
+      className="block rounded-[10px]"
     >
-      <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-accent" : ""}`} />
-      <span>{label}</span>
+      <MobileNavItemContent label={label} Icon={Icon} isActive={isActive} />
     </Link>
   );
 

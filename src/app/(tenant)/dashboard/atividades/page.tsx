@@ -1,24 +1,23 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import {
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
 import {
   AuditService,
   AUDIT_FILTER_ACTION_OPTIONS,
   type AuditPeriodFilter,
 } from "@/core/audit";
-import { TenantService } from "@/core/tenants";
-import { TenantSuspendedError } from "@/core/errors/app-error";
 import {
   getVisibleTenantAuditActions,
   hasPermission,
 } from "@/core/permissions/policies/role-matrix";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { RoleBadge } from "@/components/ui/role-badge";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
 import { AccessDeniedState } from "@/components/ui/access-denied-state";
 import { AuditLogViewer } from "@/components/audit/audit-log-viewer";
 
@@ -44,83 +43,68 @@ const VALID_PERIODS = new Set(["7d", "30d", "90d", "all"]);
 export default async function DashboardAtividadesPage({
   searchParams,
 }: DashboardAtividadesPageProps) {
-  const params = await searchParams;
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
-
-  if (!sessionUser) {
-    redirect("/login?redirect=/dashboard/atividades");
-  }
-
-  const userTenants = await TenantService.listUserTenants(
-    supabase,
-    sessionUser.id
-  );
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
-  }
-
-  if (!selectedTenant) {
-    redirect("/dashboard");
-  }
-
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole={selectedTenant.role}
-        >
-          <SuspendedTenantState tenantName={selectedTenant.name} />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
-
-  if (!hasPermission(activeContext.role, "view_tenant_audit_logs")) {
-    return (
-      <AppShell
-        user={sessionUser}
-        contextMode="tenant"
-        tenants={userTenants}
-        activeTenantId={activeContext.tenantId}
-        activeRole={activeContext.role}
-      >
-        <div className="py-6 flex justify-center">
-          <AccessDeniedState
-            title="Auditoria Restrita à Gestão"
-            description="Seu papel operacional atual (Equipe) não inclui visualização da trilha de auditoria deste estabelecimento."
-            returnHref="/dashboard"
-            returnLabel="Voltar ao Painel"
-          />
-        </div>
-      </AppShell>
-    );
-  }
+  const [params, supabase] = await Promise.all([searchParams, createClient()]);
 
   const period: AuditPeriodFilter = VALID_PERIODS.has(params.period ?? "")
     ? (params.period as AuditPeriodFilter)
     : "30d";
-
   const parsedPage = Math.max(1, Number(params.page) || 1);
+
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
+
+  const [workspace, prefetchedAudit] = await Promise.all([
+    resolveWorkspaceSession(),
+    speculativeCtx
+      ? AuditService.listTenantAuditLogs(
+          supabase,
+          "",
+          speculativeCtx.tenantId,
+          {
+            action: params.action,
+            period,
+            from: params.from,
+            to: params.to,
+            search: params.search,
+            page: parsedPage,
+            pageSize: 15,
+          },
+          speculativeCtx
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  if (!workspace.sessionUser) {
+    redirect("/login?redirect=/dashboard/atividades");
+  }
+
+  if (workspace.isSuspended) {
+    return null;
+  }
+
+  const { sessionUser, activeContext } = workspace;
+  if (!activeContext) {
+    redirect("/dashboard");
+  }
+
+  if (!hasPermission(activeContext.role, "view_tenant_audit_logs")) {
+    return (
+      <div className="py-6 flex justify-center">
+        <AccessDeniedState
+          title="Auditoria Restrita à Gestão"
+          description="Seu papel operacional atual (Equipe) não inclui visualização da trilha de auditoria deste estabelecimento."
+          returnHref="/dashboard"
+          returnLabel="Voltar ao Painel"
+        />
+      </div>
+    );
+  }
+
   const visibleActions = getVisibleTenantAuditActions(activeContext.role);
   const allowedActionOptions = visibleActions
     ? AUDIT_FILTER_ACTION_OPTIONS.filter((opt) =>
@@ -128,29 +112,32 @@ export default async function DashboardAtividadesPage({
       )
     : AUDIT_FILTER_ACTION_OPTIONS;
 
-  const auditResult = await AuditService.listTenantAuditLogs(
-    supabase,
-    sessionUser.id,
-    activeContext.tenantId,
-    {
-      action: params.action,
-      period,
-      from: params.from,
-      to: params.to,
-      search: params.search,
-      page: parsedPage,
-      pageSize: 15,
-    }
-  );
+  const canReusePrefetched =
+    hintTenantId !== null &&
+    activeContext.tenantId === hintTenantId &&
+    prefetchedAudit !== null &&
+    (activeContext.role === "owner" || activeContext.role === "platform_admin");
+
+  const auditResult = canReusePrefetched
+    ? prefetchedAudit!
+    : await AuditService.listTenantAuditLogs(
+        supabase,
+        sessionUser.id,
+        activeContext.tenantId,
+        {
+          action: params.action,
+          period,
+          from: params.from,
+          to: params.to,
+          search: params.search,
+          page: parsedPage,
+          pageSize: 15,
+        },
+        activeContext
+      );
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
+    <>
       <PageHeader
         breadcrumbs={[
           { label: activeContext.tenantName, href: "/dashboard" },
@@ -191,7 +178,6 @@ export default async function DashboardAtividadesPage({
           search: params.search,
         }}
       />
-    </AppShell>
+    </>
   );
 }
-

@@ -151,6 +151,7 @@ export function DashboardBanner({
             {retailActive && canManageProducts && (
               <Link
                 href="/dashboard/retail/produtos/novo"
+                prefetch={false}
                 className="inline-flex items-center gap-2 min-h-[40px] px-4 rounded-xl bg-gradient-to-r from-[#6C4EF2] to-[#5638DC] dark:from-[#9F7EFF] dark:to-[#7D5CFA] text-white dark:text-[#110D22] text-xs sm:text-[13px] font-semibold shadow-[0_6px_18px_-6px_rgba(91,70,229,0.55)] hover:brightness-105 transition-all"
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
@@ -173,6 +174,7 @@ export function DashboardBanner({
             {canManageTeam && (
               <Link
                 href="/dashboard/membros"
+                prefetch={false}
                 className="inline-flex items-center gap-2 min-h-[40px] px-3.5 rounded-xl border border-[#CFC5FA] dark:border-white/15 bg-white/85 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/15 text-xs sm:text-[13px] font-semibold text-[#111022] dark:text-white transition-colors"
               >
                 <UserPlus className="w-3.5 h-3.5 text-[#5B46E5] dark:text-[#B9A4FF]" aria-hidden="true" />
@@ -183,6 +185,7 @@ export function DashboardBanner({
             {!retailActive && canManageTeam && (
               <Link
                 href="/dashboard/configuracoes"
+                prefetch={false}
                 className="inline-flex items-center gap-2 min-h-[40px] px-3.5 rounded-xl border border-[#CFC5FA] dark:border-white/15 bg-white/85 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/15 text-xs sm:text-[13px] font-semibold text-[#111022] dark:text-white transition-colors"
               >
                 <Settings className="w-3.5 h-3.5 text-[#5B46E5] dark:text-[#B9A4FF]" aria-hidden="true" />
@@ -196,6 +199,7 @@ export function DashboardBanner({
         <div className="pt-4 border-t border-[#D8D0F7] dark:border-white/15 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5 text-xs">
           <Link
             href="/dashboard/retail"
+            prefetch={false}
             className="flex items-center gap-3 rounded-xl px-3 py-2 bg-white/65 dark:bg-white/[0.04] hover:bg-white/95 dark:hover:bg-white/[0.08] border border-white/60 dark:border-white/10 transition-colors"
           >
             <span className="w-8 h-8 rounded-lg bg-[#5B46E5]/10 dark:bg-[#A782FF]/15 text-[#5B46E5] dark:text-[#B9A4FF] flex items-center justify-center shrink-0">
@@ -215,6 +219,7 @@ export function DashboardBanner({
 
           <Link
             href="/dashboard/membros"
+            prefetch={false}
             className="flex items-center gap-3 rounded-xl px-3 py-2 bg-white/65 dark:bg-white/[0.04] hover:bg-white/95 dark:hover:bg-white/[0.08] border border-white/60 dark:border-white/10 transition-colors"
           >
             <span className="w-8 h-8 rounded-lg bg-[#5B46E5]/10 dark:bg-[#A782FF]/15 text-[#5B46E5] dark:text-[#B9A4FF] flex items-center justify-center shrink-0">

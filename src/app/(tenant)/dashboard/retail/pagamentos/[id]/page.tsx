@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService } from "@/core/tenants";
-import { NotFoundError, TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import {
-  RetailPaymentDetail,
-  RetailPaymentService,
-  RetailPermissionService,
-} from "@/modules/retail";
+  buildSpeculativeRlsTenantContext,
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { NotFoundError } from "@/core/errors/app-error";
+import { RetailPaymentDetail } from "@/modules/retail/components/retail-payment-detail";
+import { RetailPaymentService } from "@/modules/retail/services/retail-payment-service";
+import { RetailPermissionService } from "@/modules/retail/permissions/retail-permissions";
 
 export const metadata: Metadata = {
   title: "Detalhe da Transação | DevEssent Platform",
@@ -27,68 +25,67 @@ interface RetailPaymentDetailPageProps {
 export default async function RetailPaymentDetailPage({
   params,
 }: RetailPaymentDetailPageProps) {
-  const { id } = await params;
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const [{ id }, supabase] = await Promise.all([params, createClient()]);
 
-  if (!sessionUser) {
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
+  const speculativeCtx = hintTenantId
+    ? buildSpeculativeRlsTenantContext(hintTenantId)
+    : null;
+
+  const [workspace, prefetchedPayment] = await Promise.all([
+    resolveWorkspaceSession(),
+    speculativeCtx
+      ? RetailPaymentService.getPaymentWithDetails({
+          supabase,
+          context: speculativeCtx,
+          paymentId: id,
+        }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  if (!workspace.sessionUser) {
     redirect(`/login?redirect=/dashboard/retail/pagamentos/${id}`);
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
-  if (!selectedTenant) {
+
+  const { activeContext } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole={selectedTenant.role}
-        >
-          <SuspendedTenantState tenantName={selectedTenant.name} />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
-
-  if (!RetailPermissionService.hasPermission(activeContext.role, "view_retail_payments")) {
+  if (
+    !RetailPermissionService.hasPermission(
+      activeContext.role,
+      "view_retail_payments"
+    )
+  ) {
     redirect("/forbidden");
   }
 
-  let payment;
-  try {
-    payment = await RetailPaymentService.getPaymentWithDetails({
-      supabase,
-      context: activeContext,
-      paymentId: id,
-    });
-  } catch (err) {
-    if (err instanceof NotFoundError) {
-      notFound();
+  const hintMatched = Boolean(
+    hintTenantId && activeContext.tenantId === hintTenantId
+  );
+
+  let payment = hintMatched ? prefetchedPayment : null;
+  if (!payment) {
+    try {
+      payment = await RetailPaymentService.getPaymentWithDetails({
+        supabase,
+        context: activeContext,
+        paymentId: id,
+      });
+    } catch (err) {
+      if (err instanceof NotFoundError) {
+        notFound();
+      }
+      throw err;
     }
-    throw err;
   }
 
   const canManagePayments = RetailPermissionService.hasPermission(
@@ -97,18 +94,10 @@ export default async function RetailPaymentDetailPage({
   );
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
-      <RetailPaymentDetail
-        tenantId={activeContext.tenantId}
-        payment={payment}
-        canManagePayments={canManagePayments}
-      />
-    </AppShell>
+    <RetailPaymentDetail
+      tenantId={activeContext.tenantId}
+      payment={payment}
+      canManagePayments={canManagePayments}
+    />
   );
 }

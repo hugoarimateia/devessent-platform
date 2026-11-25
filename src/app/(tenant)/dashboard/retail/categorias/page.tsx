@@ -1,19 +1,14 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTenantCookieName } from "@/lib/environment/backend-mode";
-import { AuthService } from "@/core/auth/services/auth-service";
-import { TenantService } from "@/core/tenants";
-import { TenantSuspendedError } from "@/core/errors/app-error";
-import { AppShell } from "@/components/layout/app-shell";
-import { SuspendedTenantState } from "@/components/ui/suspended-tenant-state";
+import { isXamppTestMode } from "@/lib/environment/backend-mode";
 import {
-  RetailStoreService,
-  RetailCategoryService,
-  RetailCategoryManager,
-  RetailModuleInactive,
-} from "@/modules/retail";
+  getActiveTenantHintUuid,
+  resolveWorkspaceSession,
+} from "@/lib/workspace/workspace-context";
+import { RetailCategoryService } from "@/modules/retail/services/retail-category-service";
+import { RetailCategoryManager } from "@/modules/retail/components/retail-category-manager";
+import { RetailModuleInactive } from "@/modules/retail/components/retail-module-inactive";
 
 export const metadata: Metadata = {
   title: "Categorias | DevEssent Retail",
@@ -22,93 +17,59 @@ export const metadata: Metadata = {
 
 export default async function RetailCategoriasPage() {
   const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const hintTenantId =
+    process.env.NODE_ENV === "production" || !isXamppTestMode()
+      ? await getActiveTenantHintUuid()
+      : null;
 
-  if (!sessionUser) {
+  const [workspace, prefetchedCategories] = await Promise.all([
+    resolveWorkspaceSession(),
+    hintTenantId
+      ? RetailCategoryService.listCategories(supabase, hintTenantId, true).catch(
+          () => null
+        )
+      : Promise.resolve(null),
+  ]);
+
+  if (!workspace.sessionUser) {
     redirect("/login?redirect=/dashboard/retail/categorias");
   }
 
-  const userTenants = await TenantService.listUserTenants(supabase, sessionUser.id);
-  const cookieStore = await cookies();
-  const activeTenantCookie = cookieStore.get(getActiveTenantCookieName())?.value;
-
-  let selectedTenant = userTenants.find(
-    (t) => t.tenantId === activeTenantCookie || t.slug === activeTenantCookie
-  );
-
-  if (!selectedTenant && userTenants.length > 0) {
-    selectedTenant = userTenants[0];
+  if (workspace.isSuspended) {
+    return null;
   }
 
-  if (!selectedTenant) {
+  const { activeContext, activeRetailStore: store } = workspace;
+  if (!activeContext) {
     redirect("/dashboard");
   }
 
-  let activeContext;
-  try {
-    activeContext = await TenantService.resolveTenantContext(
-      supabase,
-      sessionUser.id,
-      selectedTenant.tenantId
-    );
-  } catch (err: unknown) {
-    if (err instanceof TenantSuspendedError) {
-      return (
-        <AppShell
-          user={sessionUser}
-          contextMode="tenant"
-          tenants={userTenants}
-          activeTenantId={selectedTenant.tenantId}
-          activeRole="staff"
-        >
-          <SuspendedTenantState
-            tenantName={selectedTenant.name}
-          />
-        </AppShell>
-      );
-    }
-    throw err;
-  }
-
-  const store = await RetailStoreService.getStore(supabase, activeContext.tenantId);
   if (!store || !store.isActive) {
     return (
-      <AppShell
-        user={sessionUser}
-        contextMode="tenant"
-        tenants={userTenants}
-        activeTenantId={activeContext.tenantId}
-        activeRole={activeContext.role}
-      >
-        <RetailModuleInactive
-          tenantId={activeContext.tenantId}
-          tenantName={activeContext.tenantName}
-          userRole={activeContext.role}
-        />
-      </AppShell>
+      <RetailModuleInactive
+        tenantId={activeContext.tenantId}
+        tenantName={activeContext.tenantName}
+        userRole={activeContext.role}
+      />
     );
   }
 
-  const categories = await RetailCategoryService.listCategories(
-    supabase,
-    activeContext.tenantId,
-    true
-  );
+  const categories =
+    hintTenantId &&
+    activeContext.tenantId === hintTenantId &&
+    prefetchedCategories !== null
+      ? prefetchedCategories
+      : await RetailCategoryService.listCategories(
+          supabase,
+          activeContext.tenantId,
+          true
+        );
 
   return (
-    <AppShell
-      user={sessionUser}
-      contextMode="tenant"
-      tenants={userTenants}
-      activeTenantId={activeContext.tenantId}
-      activeRole={activeContext.role}
-    >
-      <RetailCategoryManager
-        tenantId={activeContext.tenantId}
-        categories={categories}
-        userRole={activeContext.role}
-      />
-    </AppShell>
+    <RetailCategoryManager
+      tenantId={activeContext.tenantId}
+      categories={categories}
+      userRole={activeContext.role}
+    />
   );
 }
-

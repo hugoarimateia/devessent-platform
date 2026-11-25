@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AuthService } from "@/core/auth/services/auth-service";
+import { resolveSessionUserCached } from "@/lib/workspace/workspace-context";
 import { AuditService } from "@/core/audit";
 import { TenantService } from "@/core/tenants";
-import { AppShell } from "@/components/layout/app-shell";
 import { DataTable } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -22,13 +22,22 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminGlobalPage() {
-  const supabase = await createClient();
-  const sessionUser = await AuthService.getSessionUser(supabase);
+  const [supabase, sessionUser] = await Promise.all([
+    createClient(),
+    resolveSessionUserCached(),
+  ]);
+
+  if (!sessionUser) {
+    redirect("/login?redirect=/admin");
+  }
+  if (!sessionUser.isPlatformAdmin) {
+    redirect("/forbidden");
+  }
 
   const adminSupabase = createAdminClient();
   const [tenants, auditPreview] = await Promise.all([
-    TenantService.listAllTenants(adminSupabase, sessionUser!.id),
-    AuditService.listPlatformAuditLogs(supabase, sessionUser!.id, {
+    TenantService.listAllTenants(adminSupabase, sessionUser.id),
+    AuditService.listPlatformAuditLogs(supabase, sessionUser.id, {
       period: "all",
       page: 1,
       pageSize: 6,
@@ -43,8 +52,7 @@ export default async function AdminGlobalPage() {
     tenants.length > 0 ? Math.round((activeCount / tenants.length) * 100) : 100;
 
   return (
-    <AppShell user={sessionUser!} contextMode="platform">
-      <div className="space-y-7">
+    <div className="space-y-7">
         {/* Cabeçalho Editorial da Administração Central */}
         <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 pb-6 border-b border-surface-border">
           <div className="space-y-2 max-w-2xl">
@@ -338,6 +346,5 @@ export default async function AdminGlobalPage() {
           </aside>
         </div>
       </div>
-    </AppShell>
   );
 }

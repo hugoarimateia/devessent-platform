@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import {
   loginSchema,
@@ -11,7 +13,10 @@ import {
 import { AuthService } from "@/core/auth/services/auth-service";
 import { toPublicErrorMessage } from "@/core/errors/public-error";
 import { RATE_LIMIT_POLICIES, RateLimitService } from "@/core/security";
-import { isXamppTestMode } from "@/lib/environment/backend-mode";
+import {
+  getActiveTenantCookieName,
+  isXamppTestMode,
+} from "@/lib/environment/backend-mode";
 
 export interface ActionState {
   success?: boolean;
@@ -77,9 +82,10 @@ export async function loginAction(
   }
 
   let result;
+  let supabaseClient: Awaited<ReturnType<typeof createClient>> | null = null;
   try {
-    const supabase = await createClient();
-    result = await AuthService.signInWithPassword(supabase, {
+    supabaseClient = await createClient();
+    result = await AuthService.signInWithPassword(supabaseClient, {
       email: validated.data.email,
       password: validated.data.password,
     });
@@ -116,6 +122,33 @@ export async function loginAction(
     RATE_LIMIT_POLICIES.authLoginFailure,
     validated.data.email
   ).catch(() => {});
+
+  // Pré-define o cookie canônico de tenant (UUID) para o usuário autenticado,
+  // permitindo paralelizar o bootstrap do workspace com as consultas RLS da página.
+  if (supabaseClient && "user" in result && result.user?.id) {
+    try {
+      const { data: firstMembership } = await supabaseClient
+        .from("tenant_memberships")
+        .select("tenant_id")
+        .eq("user_id", result.user.id)
+        .limit(1)
+        .maybeSingle<{ tenant_id: string }>();
+
+      const cookieStore = await cookies();
+      if (firstMembership?.tenant_id) {
+        cookieStore.set(getActiveTenantCookieName(), firstMembership.tenant_id, {
+          path: "/",
+          sameSite: "lax",
+          httpOnly: true,
+          maxAge: 60 * 60 * 24 * 30,
+        });
+      } else {
+        cookieStore.delete(getActiveTenantCookieName());
+      }
+    } catch {
+      // falha silenciosa: o workspace resolve normalmente sem cookie hint
+    }
+  }
 
   const destination = sanitizeRedirectUrl(rawRedirect, "/dashboard");
   redirect(destination);
@@ -203,14 +236,23 @@ export async function resetPasswordAction(
  * Server Action para encerramento de sessão (Logout).
  */
 export async function logoutAction() {
+  try {
+    const cookieStore = await cookies();
+    cookieStore.delete(getActiveTenantCookieName());
+  } catch {
+    // ignora caso headers não permitam mutação
+  }
+
   if (process.env.NODE_ENV !== "production" && isXamppTestMode()) {
     const { XamppAuthAdapter } = await import("@/infrastructure/xampp-test/auth");
     await XamppAuthAdapter.signOut();
+    revalidatePath("/", "layout");
     redirect("/login");
   }
 
   const supabase = await createClient();
   await AuthService.signOut(supabase);
+  revalidatePath("/", "layout");
   redirect("/login");
 }
 
